@@ -1,0 +1,123 @@
+{
+  "projectType": "saas",
+  "projectName": "Kairo — Riwi Learning Platform",
+  "projectDescription": "An AI-powered personalized learning platform for Riwi's coding bootcamp that generates adaptive 4-week study plans and provides Team Leaders with analytics dashboards to identify at-risk students.",
+  "theme": "almond",
+  "primaryColor": "#6366F1",
+  "lightColor": "#EEF2FF",
+  "darkColor": "#3730A3",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Overview",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Setup",
+            "pages": [
+              "setup/environment",
+              "setup/database",
+              "setup/running"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Features",
+        "groups": [
+          {
+            "group": "For Coders",
+            "pages": [
+              "features/onboarding",
+              "features/learning-plan",
+              "features/focus-cards",
+              "features/ai-trainer",
+              "features/progress-tracking"
+            ]
+          },
+          {
+            "group": "For Team Leaders",
+            "pages": [
+              "features/tl-dashboard",
+              "features/risk-detection",
+              "features/ai-reports",
+              "features/feedback"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Node.js Gateway",
+            "pages": [
+              "api/auth",
+              "api/coder",
+              "api/tl",
+              "api/notifications",
+              "api/assignments"
+            ]
+          },
+          {
+            "group": "AI Microservice",
+            "pages": [
+              "api/ai-overview",
+              "api/ai-generate-plan",
+              "api/ai-focus-cards",
+              "api/ai-chat",
+              "api/ai-reports",
+              "api/ai-exercises"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Database",
+        "groups": [
+          {
+            "group": "Schema",
+            "pages": [
+              "database/overview",
+              "database/schema",
+              "database/migrations"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-generated personalized 4-week learning plans (interpretive and analytical modes)",
+    "Soft skills assessment integrated into learning path generation",
+    "Focus cards system with priority-tiered study topics (2 High / 2 Medium / 2 Low)",
+    "AI Trainer chat for on-demand tutoring powered by Groq LLM",
+    "Team Leader analytics dashboard with at-risk student identification",
+    "Automated AI reports for clans and cohorts",
+    "Activity progress tracking with evidence submission",
+    "Hybrid Node.js + Python/FastAPI microservice architecture",
+    "Social authentication (GitHub, Google) and email/password login",
+    "Semantic search using sentence-transformers embeddings"
+  ],
+  "publicApiSurface": [
+    "POST /generate-plan — Generate a personalized learning plan for a coder",
+    "POST /generate-focus-cards — Generate 6 priority-tiered study cards",
+    "POST /chat/ask — AI tutor chat endpoint",
+    "POST /generate-report — Generate a TL analytics report",
+    "POST /generate-exercise — Generate a coding exercise",
+    "GET /health — AI service health check",
+    "POST /api/auth/login — User login",
+    "POST /api/auth/register — User registration",
+    "GET /api/coder/dashboard — Coder dashboard data",
+    "GET /api/tl/dashboard — Team Leader dashboard data",
+    "GET /api/notifications — User notifications",
+    "POST /api/assignments — Assignment management"
+  ]
+}

@@ -1,0 +1,195 @@
+---
+title: "Environment Configuration"
+description: "Configure the two required .env files for the Node.js orchestrator and the Python AI microservice."
+---
+
+Kairo requires **two separate `.env` files** — one for each backend engine. Neither file should ever be committed to version control, as they contain database credentials, OAuth secrets, and API keys.
+
+<Warning>
+Never commit `.env` files to Git. Add both `backend-node/.env` and `backend-python/.env` to your `.gitignore` before writing any credentials.
+</Warning>
+
+## Creating the env files
+
+<Tabs>
+  <Tab title="Node.js Backend">
+    Create the file at `backend-node/.env`. This file controls database connectivity, session security, OAuth providers, email delivery, and the connection to the Python AI microservice.
+
+    ```env
+    # SERVER CONFIGURATION
+    PORT=3000
+    NODE_ENV=development
+
+    # SECURITY & SESSIONS
+    SESSION_SECRET=your_session_secret
+
+    # DATABASE (POSTGRESQL - SUPABASE)
+    DB_HOST=your_host
+    DB_PORT=5432
+    DB_NAME=your_name
+    DB_USER=postgres.your_user
+    DB_PASSWORD=your_password
+    DATABASE_URL=your_database_url
+
+    # SUPABASE CONFIG
+    SUPABASE_URL=your_supabase_url
+    SUPABASE_ANON_KEY=your_anon_key
+
+    # FRONTEND CONNECTION
+    FRONTEND_URL=http://127.0.0.1:5500/frontend
+
+    # PYTHON CONNECTION
+    PYTHON_API_URL=http://localhost:8000
+
+    # SOCIAL AUTH - GITHUB (optional)
+    GITHUB_CLIENT_ID=your_client
+    GITHUB_CLIENT_SECRET=your_client_secret
+
+    # SOCIAL AUTH - GOOGLE (optional)
+    GOOGLE_CLIENT_ID=your_client
+    GOOGLE_CLIENT_SECRET=your_client_secret
+
+    # AUTHENTICATION SMTP
+    SMTP_HOST=smtp.gmail.com
+    SMTP_PORT=465
+    SMTP_SECURE=true
+    SMTP_USER=your_email
+    SMTP_PASS=your_app_password
+    SMTP_FROM="Kairo <your_email>"
+
+    # API KEY AI
+    RIWI_IA_KEY=your_ia_key
+    ```
+
+    ### Variable reference
+
+    **Server**
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `PORT` | `3000` | Port the Express server listens on. |
+    | `NODE_ENV` | `development` | Runtime environment. Set to `production` when deploying. |
+
+    **Security**
+
+    | Variable | Description |
+    |---|---|
+    | `SESSION_SECRET` | Random string used to sign `express-session` cookies. Use a long, unpredictable value in production. |
+
+    **Database (Supabase PostgreSQL)**
+
+    | Variable | Description |
+    |---|---|
+    | `DB_HOST` | Supabase project database host (e.g. `db.xxxx.supabase.co`). |
+    | `DB_PORT` | PostgreSQL port. Supabase uses `5432`. |
+    | `DB_NAME` | Database name. Usually `postgres` on Supabase. |
+    | `DB_USER` | Database user, typically `postgres.your_project_ref`. |
+    | `DB_PASSWORD` | Password set when creating the Supabase project. |
+    | `DATABASE_URL` | Full connection string used by the `pg` client. |
+
+    **Supabase JS client**
+
+    | Variable | Description |
+    |---|---|
+    | `SUPABASE_URL` | Your Supabase project URL (e.g. `https://xxxx.supabase.co`). Found in Project Settings → API. |
+    | `SUPABASE_ANON_KEY` | Public anon key for the Supabase JS client. Found in Project Settings → API. |
+
+    **Service connections**
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `FRONTEND_URL` | `http://127.0.0.1:5500/frontend` | CORS allowed origin for the frontend. Must match the address Live Server uses. |
+    | `PYTHON_API_URL` | `http://localhost:8000` | Base URL of the Python AI microservice. |
+
+    **OAuth — GitHub** *(optional)*
+
+    | Variable | Description |
+    |---|---|
+    | `GITHUB_CLIENT_ID` | Client ID from your GitHub OAuth App. |
+    | `GITHUB_CLIENT_SECRET` | Client secret from your GitHub OAuth App. |
+
+    **OAuth — Google** *(optional)*
+
+    | Variable | Description |
+    |---|---|
+    | `GOOGLE_CLIENT_ID` | Client ID from your Google Cloud OAuth 2.0 credential. |
+    | `GOOGLE_CLIENT_SECRET` | Client secret from your Google Cloud OAuth 2.0 credential. |
+
+    **Email (Nodemailer / SMTP)**
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `SMTP_HOST` | `smtp.gmail.com` | SMTP server hostname. |
+    | `SMTP_PORT` | `465` | SMTP port. `465` for TLS, `587` for STARTTLS. |
+    | `SMTP_SECURE` | `true` | Set to `true` when using port 465 (SSL). |
+    | `SMTP_USER` | — | Sender email address. |
+    | `SMTP_PASS` | — | App password or SMTP password (not your account login password). |
+    | `SMTP_FROM` | — | Display name and address used in the `From` header, e.g. `"Kairo <noreply@example.com>"`. |
+
+    **AI service key**
+
+    | Variable | Description |
+    |---|---|
+    | `RIWI_IA_KEY` | Internal shared secret used to authenticate requests between the Node.js gateway and the Python AI service. |
+  </Tab>
+
+  <Tab title="Python AI Service">
+    Create the file at `backend-python/.env`. This file configures the FastAPI server, the Groq LLM provider, and the Supabase service-role connection for direct database access.
+
+    ```env
+    # PYTHON CONFIGURATION
+    PORT=8000
+    ENV=development
+
+    # GROQ / OPENAI-COMPATIBLE API
+    OPENAI_API_KEY=your_groq_api_key
+
+    # MODEL SELECTION
+    MODEL_NAME=llama-3.3-70b-versatile
+
+    # SUPABASE CONFIG
+    SUPABASE_URL=your_supabase_url
+    SUPABASE_SERVICE_KEY=your_service_key
+
+    # BACKEND NODE PORT
+    NODE_URL=http://localhost:3000
+
+    # FRONTEND PORT
+    FRONTEND_URL=http://localhost:5500
+    ```
+
+    ### Variable reference
+
+    **Server**
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `PORT` | `8000` | Port Uvicorn listens on. |
+    | `ENV` | `development` | Runtime environment. |
+
+    **AI model**
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `OPENAI_API_KEY` | — | Your Groq API key. The field name is `OPENAI_API_KEY` for SDK compatibility — the value must be a Groq key. |
+    | `MODEL_NAME` | `llama-3.3-70b-versatile` | Groq model identifier used for plan generation and AI reports. |
+
+    **Supabase (service role)**
+
+    | Variable | Description |
+    |---|---|
+    | `SUPABASE_URL` | Same Supabase project URL used by the Node.js backend. |
+    | `SUPABASE_SERVICE_KEY` | Service-role key with elevated privileges for direct database writes. Found in Project Settings → API → `service_role`. Keep this secret. |
+
+    **Service connections**
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `NODE_URL` | `http://localhost:3000` | URL of the Node.js orchestrator, added to the CORS allow-list. |
+    | `FRONTEND_URL` | `http://localhost:5500` | Frontend origin added to the CORS allow-list. |
+
+    <Note>
+      Obtain your Groq API key from [console.groq.com](https://console.groq.com). Groq provides free-tier access to `llama-3.3-70b-versatile` and other open models. Set the key as the value of `OPENAI_API_KEY`.
+    </Note>
+  </Tab>
+</Tabs>

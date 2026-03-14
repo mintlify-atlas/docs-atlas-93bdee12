@@ -1,0 +1,160 @@
+---
+title: "Notifications"
+description: "Real-time Server-Sent Events stream and REST endpoints for managing user notifications."
+---
+
+## Overview
+
+The Kairo notification system has two layers:
+
+- **SSE stream** (`GET /api/notifications/stream`) — a persistent connection that receives events in real time when another user triggers an action (e.g. a TL submits feedback, a resource is uploaded).
+- **REST endpoints** — fetch the notification list, mark all as read, or delete individual items.
+
+All endpoints require an active session (`riwi.sid` cookie). Both `coder` and `tl` roles can access notifications.
+
+**Base URL:** `http://localhost:3000`
+
+All endpoints are mounted under `/api/notifications`.
+
+---
+
+## Real-Time Stream
+
+### GET /api/notifications/stream
+
+Establishes a persistent Server-Sent Events (SSE) connection for the authenticated user. The server keeps the connection open and pushes events whenever a new notification is created for that user.
+
+```bash
+curl -N http://localhost:3000/api/notifications/stream \
+  -H "Accept: text/event-stream" \
+  -b cookies.txt
+```
+
+**Response headers**
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | `text/event-stream` |
+| `Cache-Control` | `no-cache` |
+| `Connection` | `keep-alive` |
+
+The server writes `: connected\n\n` immediately on connection to confirm the stream is open.
+
+Each pushed event follows the SSE format:
+
+```text
+data: {"id":99,"title":"Nuevo Feedback","message":"...","type":"feedback","reference_id":77,"is_read":false,"created_at":"2025-11-10T15:00:00Z"}
+
+```
+
+<Note>
+  The connection is automatically cleaned up when the client disconnects. Use `EventSource` in the browser or reconnect logic in Node.js clients to handle network interruptions.
+</Note>
+
+---
+
+## Notification List
+
+### GET /api/notifications
+
+Returns the 30 most recent notifications for the authenticated user, ordered newest first, along with a count of unread items.
+
+```bash
+curl http://localhost:3000/api/notifications \
+  -b cookies.txt
+```
+
+**Response**
+
+<ResponseField name="notifications" type="array">
+  Up to 30 notification records, ordered by `created_at DESC`.
+  <Expandable title="notification fields">
+    <ResponseField name="id" type="number">Notification ID.</ResponseField>
+    <ResponseField name="user_id" type="number">Recipient user ID.</ResponseField>
+    <ResponseField name="title" type="string">Short notification title.</ResponseField>
+    <ResponseField name="message" type="string">Full notification body.</ResponseField>
+    <ResponseField name="type" type="string">Event type: `feedback`, `feedback_read`, or `assignment`.</ResponseField>
+    <ResponseField name="reference_id" type="number | null">ID of the related record (feedback ID, assignment ID, etc.).</ResponseField>
+    <ResponseField name="is_read" type="boolean">`false` for new notifications, `true` once marked read.</ResponseField>
+    <ResponseField name="created_at" type="string">ISO timestamp of creation.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="unread" type="number">
+  Count of notifications where `is_read` is `false`.
+</ResponseField>
+
+```json 200
+{
+  "notifications": [
+    {
+      "id": 99,
+      "user_id": 42,
+      "title": "Nuevo Feedback Requerido",
+      "message": "Carlos Méndez te ha dejado un feedback: \"Excelente trabajo...\"",
+      "type": "feedback",
+      "reference_id": 77,
+      "is_read": false,
+      "created_at": "2025-11-10T15:00:00Z"
+    }
+  ],
+  "unread": 1
+}
+```
+
+---
+
+## Mark All Read
+
+### POST /api/notifications/read
+
+Marks **all** notifications for the authenticated user as read (`is_read = true`). Typically called when the user opens the notification bell panel.
+
+```bash
+curl -X POST http://localhost:3000/api/notifications/read \
+  -b cookies.txt
+```
+
+```json 200
+{ "success": true }
+```
+
+---
+
+## Delete Notification
+
+### DELETE /api/notifications/:id
+
+Permanently deletes a single notification. The notification must belong to the authenticated user.
+
+```bash
+curl -X DELETE http://localhost:3000/api/notifications/99 \
+  -b cookies.txt
+```
+
+**Path parameter**
+
+<ParamField path="id" type="number" required>
+  ID of the notification to delete.
+</ParamField>
+
+<ResponseField name="success" type="boolean">`true` on successful deletion.</ResponseField>
+<ResponseField name="deletedId" type="string">The ID of the deleted notification.</ResponseField>
+
+```json 200
+{ "success": true, "deletedId": "99" }
+```
+
+```json 404
+{ "error": "Notificación no encontrada o no tienes permisos." }
+```
+
+---
+
+## Notification Types
+
+| `type` value | Triggered by |
+|--------------|--------------|
+| `feedback` | TL submits feedback on a coder via `POST /api/tl/feedback` |
+| `feedback_read` | Coder marks a TL feedback item as read via `PATCH /api/coder/feedback/:id/read` |
+| `assignment` | TL creates an assignment (`POST /api/tl/assignment`) or uploads a resource (`POST /api/tl/resource/upload`) |

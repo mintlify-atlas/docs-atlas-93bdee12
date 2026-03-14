@@ -1,0 +1,88 @@
+---
+title: "AI Trainer Chat"
+description: "Ask Kairo, the AI coding tutor, a programming question and receive a concise, practical answer."
+---
+
+## Endpoint
+
+```
+POST /chat/ask
+```
+
+**Tag:** AI Tutor
+
+Sends a message to Kairo, the AI coding tutor, and returns a response. The tutor is instructed to give a short answer first, then explain if needed, using simple language and a maximum of 3 paragraphs.
+
+This endpoint can be called by the frontend chat widget directly or via the Node.js proxy.
+
+## Request Body
+
+<ParamField body="message" type="string" required>
+  The programming question or message from the coder. Cannot be empty or whitespace-only.
+</ParamField>
+
+<ParamField body="coder_id" type="integer">
+  Optional coder user ID. Accepted for context but not currently used to personalize the response. Defaults to `null`.
+</ParamField>
+
+## Request Example
+
+```bash
+curl -X POST http://localhost:8000/chat/ask \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is the difference between INNER JOIN and LEFT JOIN in SQL?",
+    "coder_id": 3
+  }'
+```
+
+## Response
+
+```json
+{
+  "reply": "An INNER JOIN returns only the rows where there is a match in both tables. A LEFT JOIN returns all rows from the left table, with NULL values for columns from the right table when there is no match.\n\nThink of INNER JOIN as the intersection of two circles in a Venn diagram — only what's in both. LEFT JOIN keeps everything on the left, plus whatever matches on the right.\n\nUse LEFT JOIN when you need all records from the main table regardless of whether related data exists — for example, listing all students even if they have no grades yet."
+}
+```
+
+## Response Fields
+
+<ResponseField name="reply" type="string">
+  The AI tutor's response. Always a single string. The response is limited to a maximum of 600 tokens and at most 3 paragraphs.
+</ResponseField>
+
+## AI Model & Behavior
+
+The chat endpoint uses **Groq** with model `llama-3.3-70b-versatile` (configurable via `MODEL_NAME` env var).
+
+The system prompt instructs Kairo to:
+- Answer concisely and practically
+- Give a short answer first, then explain if needed
+- Use simple language
+- Stay within 3 paragraphs maximum
+- Be motivating toward the coder
+
+**Generation parameters:**
+
+| Parameter | Value |
+|-----------|-------|
+| `max_tokens` | 600 |
+| `temperature` | 0.7 |
+
+## Errors
+
+| Status | Condition |
+|--------|-----------|
+| `400` | `message` is empty or contains only whitespace |
+| `500` | Groq API is unavailable or returns an error |
+
+```json
+{ "detail": "Message cannot be empty" }
+```
+
+```json
+{ "detail": "AI tutor temporarily unavailable" }
+```
+
+<Note>
+  The chat endpoint does not retain conversation history between requests. Each call is stateless — if you need multi-turn conversation, the caller is responsible for maintaining and passing message history.
+</Note>

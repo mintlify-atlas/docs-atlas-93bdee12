@@ -1,0 +1,95 @@
+---
+title: 'Team Leader Dashboard'
+description: 'Command center for monitoring coder progress, risk alerts, and clan performance in real time.'
+keywords: ['dashboard', 'team leader', 'clan', 'risk', 'progress', 'coders']
+---
+
+The Team Leader Dashboard is the central command center for monitoring every coder in your clan. It surfaces academic progress, soft skill scores, risk flags, and AI-generated reports in a single view — so you can act on problems before they compound.
+
+The dashboard is powered by the `GET /api/tl/dashboard` endpoint, which reads from multiple joined tables and returns a structured payload covering coder profiles, overview statistics, and clan-wide soft skill averages.
+
+## Dashboard sections
+
+<CardGroup cols={2}>
+  <Card title="Coder Overview" icon="users">
+    A live table of every coder in your clan, showing name, average score, current week, learning style, and onboarding status. Filter by all coders, at-risk coders, or those with pending onboarding.
+  </Card>
+  <Card title="Risk Alerts" icon="triangle-exclamation">
+    Color-coded risk badges appear inline on each coder row. The topbar also shows a count of coders currently flagged as high or critical risk across the clan.
+  </Card>
+  <Card title="AI Reports" icon="file-lines">
+    The detail panel for each coder includes a PDF export button that calls the Python report service to generate a clan performance PDF via `GET /generate-pdf/{clan}`.
+  </Card>
+  <Card title="Group Assignments" icon="clipboard-list">
+    Navigate to the Groups view to create random, manual, or level-based working groups from your clan's coders. Navigate to Activities to publish PDF or repo-based assignments.
+  </Card>
+</CardGroup>
+
+## Clan filtering
+
+Each TL account is scoped to a single clan. The dashboard query filters all coders by `users.clan = tl.clan_id`, so you only ever see coders in your own clan. The three clans in the platform are:
+
+| Clan | Description |
+|------|-------------|
+| `Turing` | Named after Alan Turing |
+| `Tesla` | Named after Nikola Tesla |
+| `McCarthy` | Named after John McCarthy |
+
+The clan name appears as a highlighted heading in the topbar once the dashboard loads.
+
+## Overview statistics
+
+The dashboard computes five summary statistics from the coder list before rendering:
+
+| Statistic | Source |
+|-----------|--------|
+| Total coders in clan | Count of `users` with `role = 'coder'` and matching `clan` |
+| Onboarding complete | Coders where `first_login = false` |
+| Pending onboarding | Coders where `first_login = true` |
+| High/critical risk coders | Coders with an unresolved `risk_flags` row at `high` or `critical` |
+| Clan average score | Mean of `moodle_progress.average_score` across all clan coders |
+
+## Soft skills panel
+
+The dashboard also aggregates clan-level averages for the five soft skills scored 1–5. Only coders who have completed the diagnostic assessment (i.e., `learning_style IS NOT NULL`) are included in this average, preventing incomplete data from skewing the result.
+
+| Skill | Field |
+|-------|-------|
+| Autonomy | `soft_skills_assessment.autonomy` |
+| Time management | `soft_skills_assessment.time_management` |
+| Problem solving | `soft_skills_assessment.problem_solving` |
+| Communication | `soft_skills_assessment.communication` |
+| Teamwork | `soft_skills_assessment.teamwork` |
+
+## The `v_coder_risk_analysis` view
+
+The `v_coder_risk_analysis` database view is the primary data source that powers the risk analysis layer of the dashboard. It joins coder profiles, soft skills, Moodle progress, unresolved risk flags, and plan activity counts into a single row per coder.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | integer | Coder's user ID |
+| `full_name` | varchar | Coder's full name |
+| `autonomy` | integer (1–5) | Autonomy score from soft skills assessment |
+| `time_management` | integer (1–5) | Time management score from soft skills assessment |
+| `average_score` | decimal | Academic average score from Moodle (0–100) |
+| `current_risk_level` | risk_level_enum | Risk level currently stored in `risk_flags` (defaults to `low` if no flag exists) |
+| `calculated_risk_level` | risk_level_enum | Risk level computed in real time by the view formula |
+| `total_activities` | integer | Total plan activities assigned across all active plans |
+| `completed_activities` | integer | Plan activities marked as completed by the coder |
+
+The distinction between `current_risk_level` and `calculated_risk_level` is important: `current_risk_level` reflects the last saved flag in the database, while `calculated_risk_level` is recomputed on every query based on the latest scores. See [Risk Detection](/features/risk-detection) for the full formula.
+
+## Coder detail panel
+
+Clicking any row in the coder table opens a detail panel on the right side of the dashboard. The panel shows:
+
+- Full name, email, clan tag, and onboarding status
+- Current week and average score
+- Learning style (visual, auditory, kinesthetic, or mixed)
+- Individual skill bars for all five soft skills
+- A feedback form to send a message directly to the coder
+- A PDF export button to generate the clan report
+
+<Note>
+The feedback form in the detail panel calls `POST /api/tl/feedback`. The coder receives a real-time notification via Server-Sent Events immediately after submission.
+</Note>

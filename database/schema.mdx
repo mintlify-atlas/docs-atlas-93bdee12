@@ -1,0 +1,384 @@
+---
+title: "Database Schema"
+description: "Complete table definitions, enum types, indexes, and views for the Kairo PostgreSQL database."
+---
+
+All tables use `SERIAL PRIMARY KEY` for auto-incrementing integer IDs and `TIMESTAMP DEFAULT CURRENT_TIMESTAMP` for creation timestamps. The schema targets **PostgreSQL 14+** running on Supabase.
+
+## Enum Types
+
+```sql
+CREATE TYPE role_enum             AS ENUM ('coder', 'tl');
+CREATE TYPE learning_style_enum   AS ENUM ('visual', 'auditory', 'kinesthetic', 'mixed');
+CREATE TYPE activity_type_enum    AS ENUM ('guided', 'semi_guided', 'autonomous');
+CREATE TYPE feedback_type_enum    AS ENUM ('weekly', 'activity', 'general');
+CREATE TYPE risk_level_enum       AS ENUM ('low', 'medium', 'high');
+CREATE TYPE report_target_enum    AS ENUM ('coder', 'clan', 'cohort');
+CREATE TYPE ai_agent_enum         AS ENUM ('learning_plan', 'report_generator', 'risk_detector');
+CREATE TYPE priority_level_enum   AS ENUM ('low', 'medium', 'high');
+```
+
+---
+
+## Table: users
+
+*All platform users — coders and Team Leaders.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | Auto-increment user ID |
+| `email` | `VARCHAR(100)` | UNIQUE NOT NULL | Login email address |
+| `password` | `VARCHAR(255)` | NOT NULL | Hashed password |
+| `full_name` | `VARCHAR(150)` | NOT NULL | User's full name |
+| `role` | `role_enum` | NOT NULL | `'coder'` or `'tl'` |
+| `clan_id` | `VARCHAR(50)` | — | Clan name: `'Turing'`, `'Tesla'`, `'McCarthy'` |
+| `first_login` | `BOOLEAN` | DEFAULT TRUE | Triggers onboarding flow when true |
+| `created_at` | `TIMESTAMP` | DEFAULT NOW() | Record creation timestamp |
+
+**Indexes:** `idx_users_email` (email lookups), `idx_users_role` (role filtering), `idx_users_clan_id` (clan filtering by TL)
+
+---
+
+## Table: soft_skills_assessment
+
+*Onboarding diagnostic results — one record per coder.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `coder_id` | `INT` | NOT NULL UNIQUE, FK → users | One assessment per coder |
+| `autonomy` | `INT` | NOT NULL, CHECK 1–5 | Self-directedness score |
+| `time_management` | `INT` | NOT NULL, CHECK 1–5 | Time management score |
+| `problem_solving` | `INT` | NOT NULL, CHECK 1–5 | Problem solving score |
+| `communication` | `INT` | NOT NULL, CHECK 1–5 | Communication score |
+| `teamwork` | `INT` | NOT NULL, CHECK 1–5 | Teamwork score |
+| `learning_style` | `learning_style_enum` | NOT NULL | Visual, auditory, kinesthetic, or mixed |
+| `raw_answers` | `JSONB` | — | Full answer array `[{questionId, optionId, score}]` for audit |
+| `assessed_at` | `TIMESTAMP` | DEFAULT NOW() | Diagnostic completion timestamp |
+
+**Indexes:** `idx_soft_skills_coder` (coder_id lookups)
+
+---
+
+## Table: user_profiles
+
+*Extended profile information for coders and TLs.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `user_id` | `INT` | PRIMARY KEY, FK → users | One profile per user |
+| `phone` | `VARCHAR(20)` | — | Phone number |
+| `location` | `VARCHAR(100)` | — | City or country |
+| `birth_date` | `DATE` | — | Date of birth |
+| `bio` | `TEXT` | — | Short bio text |
+| `github_url` | `TEXT` | — | GitHub profile URL |
+| `linkedin_url` | `TEXT` | — | LinkedIn profile URL |
+| `twitter_url` | `TEXT` | — | Twitter/X profile URL |
+| `portfolio_url` | `TEXT` | — | Personal portfolio URL |
+| `updated_at` | `TIMESTAMP` | DEFAULT NOW() | Last update timestamp |
+
+**Indexes:** `idx_user_profiles_user_id`
+
+---
+
+## Table: modules
+
+*Bootcamp curriculum modules.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `name` | `VARCHAR(100)` | NOT NULL | Module name (e.g., `'Bases de Datos'`) |
+| `description` | `TEXT` | — | Module learning objectives |
+| `total_weeks` | `INT` | NOT NULL | Total duration in weeks |
+| `created_at` | `TIMESTAMP` | DEFAULT NOW() | |
+
+---
+
+## Table: topics
+
+*Individual technical topics within each module.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `module_id` | `INT` | NOT NULL, FK → modules | Parent module |
+| `name` | `VARCHAR(200)` | NOT NULL | Topic name |
+| `category` | `VARCHAR(100)` | — | Topic category (e.g., `'Conceptos'`, `'Avanzado'`) |
+
+**Indexes:** `idx_topics_module` (module topics listing), `idx_topics_category` (category filtering)
+
+---
+
+## Table: moodle_progress
+
+*Per-coder academic progress synced from Moodle.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `coder_id` | `INT` | NOT NULL, FK → users | |
+| `module_id` | `INT` | NOT NULL, FK → modules | |
+| `current_week` | `INT` | NOT NULL | The coder's current week in the module |
+| `weeks_completed` | `JSONB` | DEFAULT `'[]'` | Array of completed week numbers |
+| `struggling_topics` | `TEXT[]` | DEFAULT `'{}'` | Array of struggling topic names |
+| `average_score` | `DECIMAL(5,2)` | DEFAULT 0 | Current average score (0–100) |
+| `updated_at` | `TIMESTAMP` | DEFAULT NOW() | Last sync timestamp |
+
+**Unique constraint:** `(coder_id, module_id)` — one progress record per coder per module.
+
+**Indexes:** `idx_moodle_coder` (coder progress lookups), `idx_moodle_score` (score-based risk queries)
+
+---
+
+## Table: coder_struggling_topics
+
+*N:M relationship — which coders struggle with which topics.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `coder_id` | `INT` | NOT NULL, FK → users | |
+| `topic_id` | `INT` | NOT NULL, FK → topics | |
+| `reported_at` | `TIMESTAMP` | DEFAULT NOW() | When the difficulty was reported |
+
+**Unique constraint:** `(coder_id, topic_id)` — prevents duplicate entries.
+
+**Indexes:** `idx_struggling_coder`
+
+---
+
+## Table: complementary_plans
+
+*AI-generated personalized learning plans — the "6 Cards" shown in the coder dashboard.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `coder_id` | `INT` | NOT NULL, FK → users | |
+| `module_id` | `INT` | NOT NULL, FK → modules | |
+| `plan_content` | `JSONB` | NOT NULL | Full AI-generated plan JSON |
+| `priority_level` | `priority_level_enum` | DEFAULT `'medium'` | Card priority: `'high'`, `'medium'`, `'low'` |
+| `soft_skills_snapshot` | `JSONB` | — | Soft skill scores at generation time (audit) |
+| `moodle_status_snapshot` | `JSONB` | — | Moodle progress at generation time (audit) |
+| `is_active` | `BOOLEAN` | DEFAULT TRUE | Only one plan is active per coder at a time |
+| `generated_at` | `TIMESTAMP` | DEFAULT NOW() | |
+
+**Priority distribution:** 2 High, 2 Medium, 2 Low — matching the 6 Cards layout.
+
+**Indexes:** `idx_plans_coder`, `idx_plans_active` (active plan queries), `idx_plans_priority` (sorting cards)
+
+---
+
+## Table: plan_activities
+
+*Daily activities within a learning plan.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `plan_id` | `INT` | NOT NULL, FK → complementary_plans | |
+| `day_number` | `INT` | NOT NULL | Day within the plan (1–20) |
+| `title` | `VARCHAR(200)` | NOT NULL | Activity title |
+| `description` | `TEXT` | — | Full activity description |
+| `estimated_time_minutes` | `INT` | — | Estimated duration |
+| `activity_type` | `activity_type_enum` | — | `'guided'`, `'semi_guided'`, or `'autonomous'` |
+| `skill_focus` | `VARCHAR(100)` | — | Soft skill this activity targets |
+
+**Indexes:** `idx_activities_plan`, `idx_activities_day`
+
+---
+
+## Table: activity_progress
+
+*Tracks completion status for each coder per activity.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `activity_id` | `INT` | NOT NULL, FK → plan_activities | |
+| `coder_id` | `INT` | NOT NULL, FK → users | |
+| `completed` | `BOOLEAN` | DEFAULT FALSE | Whether the activity is marked done |
+| `reflection_text` | `TEXT` | — | Optional coder reflection/notes |
+| `time_spent_minutes` | `INT` | — | Actual time spent |
+| `completed_at` | `TIMESTAMP NULL` | — | Completion timestamp |
+
+**Unique constraint:** `(activity_id, coder_id)` — one progress record per coder per activity.
+
+**Indexes:** `idx_progress_activity`, `idx_progress_coder`, `idx_progress_completed` (completion percentage queries)
+
+---
+
+## Table: evidence_submissions
+
+*Files and links uploaded by coders as activity evidence.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `activity_id` | `INT` | NOT NULL, FK → plan_activities | |
+| `coder_id` | `INT` | NOT NULL, FK → users | |
+| `file_url` | `TEXT` | — | URL to uploaded file (Supabase Storage) |
+| `link_url` | `TEXT` | — | External URL (GitHub, CodePen, etc.) |
+| `description` | `TEXT` | — | Description of the evidence |
+| `submitted_at` | `TIMESTAMP` | DEFAULT NOW() | |
+
+**Indexes:** `idx_evidence_activity`, `idx_evidence_coder`
+
+---
+
+## Table: tl_feedback
+
+*Messages and feedback from Team Leaders to coders.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `coder_id` | `INT` | NOT NULL, FK → users | Recipient coder |
+| `tl_id` | `INT` | NOT NULL, FK → users | Sending TL |
+| `plan_id` | `INT` | FK → complementary_plans ON DELETE SET NULL | Related plan (optional) |
+| `feedback_text` | `TEXT` | NOT NULL | The feedback message |
+| `feedback_type` | `feedback_type_enum` | — | `'weekly'`, `'activity'`, or `'general'` |
+| `is_read` | `BOOLEAN` | DEFAULT FALSE | `false` = unread notification dot in the UI |
+| `created_at` | `TIMESTAMP` | DEFAULT NOW() | |
+
+**Indexes:** `idx_feedback_coder`, `idx_feedback_tl`, `idx_feedback_is_read`, `idx_feedback_coder_unread` (unread notification count)
+
+---
+
+## Table: risk_flags
+
+*Automatic risk alerts for coders with concerning performance indicators.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `coder_id` | `INT` | NOT NULL, FK → users | |
+| `risk_level` | `risk_level_enum` | NOT NULL | `'low'`, `'medium'`, or `'high'` |
+| `reason` | `TEXT` | NOT NULL | Human-readable reason for the flag |
+| `auto_detected` | `BOOLEAN` | DEFAULT TRUE | Whether detected by the system automatically |
+| `detected_at` | `TIMESTAMP` | DEFAULT NOW() | |
+| `resolved` | `BOOLEAN` | DEFAULT FALSE | TL has resolved this flag |
+| `resolved_at` | `TIMESTAMP NULL` | — | Resolution timestamp |
+
+**Indexes:** `idx_risk_coder`, `idx_risk_level`, `idx_risk_resolved` (active flags query)
+
+---
+
+## Table: ai_reports
+
+*Executive performance reports generated by the AI for Team Leaders.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `target_type` | `report_target_enum` | NOT NULL | `'coder'`, `'clan'`, or `'cohort'` |
+| `target_id` | `INT` | NOT NULL | ID of the target (e.g., TL user ID for clan reports) |
+| `summary_text` | `TEXT` | NOT NULL | AI-generated current state summary |
+| `risk_level` | `risk_level_enum` | — | Overall risk level |
+| `recommendations` | `TEXT` | — | AI-generated recommendations paragraph |
+| `generated_at` | `TIMESTAMP` | DEFAULT NOW() | |
+| `viewed_by_tl` | `BOOLEAN` | DEFAULT FALSE | Whether the TL has opened the report |
+
+**Indexes:** `idx_reports_target` (target_type + target_id), `idx_reports_viewed` (unread reports count)
+
+---
+
+## Table: ai_generation_log
+
+*Complete audit log of all AI generation calls.*
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | PRIMARY KEY | |
+| `coder_id` | `INT` | FK → users ON DELETE SET NULL | Associated coder (nullable for TL reports) |
+| `agent_type` | `ai_agent_enum` | NOT NULL | `'learning_plan'`, `'report_generator'`, or `'risk_detector'` |
+| `input_payload` | `JSONB` | NOT NULL | Full request context sent to the AI |
+| `output_payload` | `JSONB` | NOT NULL | AI response or error saved for audit |
+| `model_name` | `VARCHAR(100)` | — | LLM model used (e.g., `'llama-3.3-70b-versatile'`) |
+| `execution_time_ms` | `INT` | — | End-to-end generation time in milliseconds |
+| `success` | `BOOLEAN` | DEFAULT TRUE | Whether generation succeeded or fell back |
+| `error_message` | `TEXT` | — | Error details if `success = false` |
+| `generated_at` | `TIMESTAMP` | DEFAULT NOW() | |
+
+**Indexes:** `idx_log_agent` (agent type analytics), `idx_log_coder` (per-coder AI usage), `idx_log_date` (time-range queries)
+
+---
+
+## Views
+
+### v_coder_dashboard
+
+*Aggregated progress summary for each coder's dashboard.*
+
+```sql
+CREATE VIEW v_coder_dashboard AS
+SELECT 
+  u.id,
+  u.email,
+  u.full_name,
+  u.clan_id,
+  ssa.autonomy,
+  ssa.time_management,
+  ssa.learning_style,
+  m.name AS module_name,
+  mp.current_week,
+  mp.average_score,
+  COUNT(DISTINCT pa.id) AS total_activities,
+  SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END) AS completed_activities,
+  ROUND((SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)::NUMERIC / 
+         NULLIF(COUNT(DISTINCT pa.id), 0)) * 100, 2) AS completion_percentage
+FROM users u
+LEFT JOIN soft_skills_assessment ssa ON u.id = ssa.coder_id
+LEFT JOIN moodle_progress mp ON u.id = mp.coder_id
+LEFT JOIN modules m ON mp.module_id = m.id
+LEFT JOIN complementary_plans cp ON u.id = cp.coder_id AND cp.is_active = TRUE
+LEFT JOIN plan_activities pa ON cp.id = pa.plan_id
+LEFT JOIN activity_progress ap ON pa.id = ap.activity_id AND ap.coder_id = u.id
+WHERE u.role = 'coder'
+GROUP BY u.id, u.email, u.full_name, u.clan_id,
+         ssa.autonomy, ssa.time_management, ssa.learning_style,
+         m.name, mp.current_week, mp.average_score;
+```
+
+**Returns:** One row per coder with their current module name, week, average score, and the percentage of plan activities completed.
+
+### v_coder_risk_analysis
+
+*Risk assessment view used by TLs to identify at-risk coders.*
+
+```sql
+CREATE VIEW v_coder_risk_analysis AS
+SELECT 
+  u.id,
+  u.email,
+  u.full_name,
+  ssa.autonomy,
+  ssa.time_management,
+  mp.average_score,
+  COALESCE(rf.risk_level, 'low'::risk_level_enum) AS current_risk_level,
+  CASE 
+    WHEN ssa.autonomy <= 2 AND mp.average_score < 70 THEN 'high'::risk_level_enum
+    WHEN ssa.autonomy <= 2 OR mp.average_score < 70   THEN 'medium'::risk_level_enum
+    ELSE 'low'::risk_level_enum
+  END AS calculated_risk_level,
+  COUNT(DISTINCT pa.id) AS total_activities,
+  SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END) AS completed_activities
+FROM users u
+LEFT JOIN soft_skills_assessment ssa ON u.id = ssa.coder_id
+LEFT JOIN moodle_progress mp ON u.id = mp.coder_id
+LEFT JOIN risk_flags rf ON u.id = rf.coder_id AND rf.resolved = FALSE
+LEFT JOIN complementary_plans cp ON u.id = cp.coder_id AND cp.is_active = TRUE
+LEFT JOIN plan_activities pa ON cp.id = pa.plan_id
+LEFT JOIN activity_progress ap ON pa.id = ap.activity_id AND ap.coder_id = u.id
+WHERE u.role = 'coder'
+GROUP BY u.id, u.email, u.full_name,
+         ssa.autonomy, ssa.time_management, mp.average_score, rf.risk_level;
+```
+
+**Risk calculation logic:**
+- `high` — autonomy ≤ 2 **and** average_score < 70
+- `medium` — autonomy ≤ 2 **or** average_score < 70
+- `low` — all other cases
+
+The `current_risk_level` reflects any unresolved `risk_flags` record; `calculated_risk_level` is computed live from current data.

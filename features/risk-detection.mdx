@@ -1,0 +1,119 @@
+---
+title: 'Risk Detection'
+description: 'Automated risk scoring and manual flag management to identify coders who need immediate support.'
+keywords: ['risk', 'risk flags', 'at-risk', 'detection', 'autonomy', 'score', 'alerts']
+---
+
+Kairo continuously evaluates each coder's academic performance and soft skill profile to detect risk early. The system combines automated detection — driven by a SQL formula — with manual flag management so Team Leaders can track, investigate, and resolve concerns.
+
+## Automated risk scoring
+
+The `v_coder_risk_analysis` view computes a `calculated_risk_level` for every coder on every query. The formula uses two signals: the coder's `autonomy` score from the soft skills assessment (1–5) and their `average_score` from Moodle (0–100).
+
+```sql
+CASE 
+  WHEN ssa.autonomy <= 2 AND mp.average_score < 70 THEN 'high'
+  WHEN ssa.autonomy <= 2 OR  mp.average_score < 70 THEN 'medium'
+  ELSE 'low'
+END AS calculated_risk_level
+```
+
+### Detection criteria
+
+| Risk level | Condition | Meaning |
+|------------|-----------|--------|
+| `high` | `autonomy <= 2` **AND** `average_score < 70` | Coder is both struggling academically and showing low self-direction |
+| `medium` | `autonomy <= 2` **OR** `average_score < 70` | One signal is present; early intervention recommended |
+| `low` | Neither condition met | Coder is on track |
+
+<Warning>
+Unresolved `high` risk flags require immediate TL intervention. A coder at high risk who goes unaddressed will typically fall further behind as each module builds on the previous one.
+</Warning>
+
+## The `risk_flags` table
+
+When a risk is confirmed — either by the automated detector or manually by a TL — a record is written to the `risk_flags` table.
+
+```sql
+CREATE TABLE risk_flags (
+  id           SERIAL PRIMARY KEY,
+  coder_id     INT NOT NULL,
+  risk_level   risk_level_enum NOT NULL,  -- 'low', 'medium', 'high'
+  reason       TEXT NOT NULL,
+  auto_detected BOOLEAN DEFAULT TRUE,
+  detected_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  resolved     BOOLEAN DEFAULT FALSE,
+  resolved_at  TIMESTAMP NULL
+);
+```
+
+| Field | Description |
+|-------|-------------|
+| `coder_id` | References `users.id` for the flagged coder |
+| `risk_level` | Severity: `low`, `medium`, or `high` (defined by `risk_level_enum`) |
+| `reason` | Human-readable explanation of why the flag was raised |
+| `auto_detected` | `true` if raised by the AI agent, `false` if created manually by the TL |
+| `resolved` | `false` = active flag shown in dashboard; `true` = archived |
+| `resolved_at` | Timestamp set when the TL marks the flag as resolved |
+
+## The `risk_level_enum`
+
+The `risk_level_enum` PostgreSQL type constrains the valid values across all risk-related columns in the schema:
+
+```sql
+CREATE TYPE risk_level_enum AS ENUM ('low', 'medium', 'high');
+```
+
+This enum is used in `risk_flags.risk_level`, `ai_reports.risk_level`, and the computed `calculated_risk_level` column in `v_coder_risk_analysis`.
+
+## Dashboard color coding
+
+Risk levels are rendered with consistent color coding throughout the TL dashboard:
+
+| Risk level | Color | Badge behavior |
+|------------|-------|----------------|
+| `low` | Green | No badge shown in the coder table row |
+| `medium` | Yellow | Yellow badge visible inline on the coder row |
+| `high` | Red | Red badge inline; coder also counted in the topbar risk counter |
+
+Coders are sorted in the clan view with higher-risk entries first, using an explicit `CASE` ordering in the SQL query:
+
+```sql
+ORDER BY
+  CASE rf.risk_level
+    WHEN 'high'   THEN 1
+    WHEN 'medium' THEN 2
+    ELSE 3
+  END,
+  u.full_name ASC
+```
+
+## Resolving a risk flag
+
+When a TL determines that a coder's situation has improved, they can mark the active flag as resolved. This sets `resolved = true` and records `resolved_at` with the current timestamp. Resolved flags are excluded from all dashboard queries (`WHERE rf.resolved = false`), so they no longer affect the coder's displayed risk status.
+
+Resolved flags are **not deleted** — they remain in the table as an audit trail of past risk events.
+
+<CardGroup cols={2}>
+  <Card title="Auto-detection criteria" icon="robot">
+    The `v_coder_risk_analysis` view evaluates autonomy and average score on every query. No manual input is needed — risk levels are always current.
+  </Card>
+  <Card title="Manual review" icon="magnifying-glass">
+    TLs can inspect a coder's full detail panel on the dashboard to review their score history, soft skills, and current plan activities before deciding on next steps.
+  </Card>
+  <Card title="Resolution tracking" icon="circle-check">
+    Marking a flag as resolved updates `resolved = true` and stamps `resolved_at`. The coder's risk badge is immediately removed from the dashboard.
+  </Card>
+  <Card title="Audit trail" icon="clock-rotate-left">
+    All past flags — including resolved ones — remain in the `risk_flags` table with their `detected_at` and `resolved_at` timestamps, supporting full historical review.
+  </Card>
+</CardGroup>
+
+## Two risk levels: current vs. calculated
+
+The `v_coder_risk_analysis` view exposes two risk fields simultaneously:
+
+- **`current_risk_level`** — the risk level stored in the most recent unresolved `risk_flags` record. Defaults to `low` if no active flag exists.
+- **`calculated_risk_level`** — the risk level recomputed in real time by the view formula using the coder's latest `autonomy` and `average_score`.
+
+A divergence between these two fields — for example, `calculated_risk_level = 'high'` but `current_risk_level = 'low'` — indicates that a coder's situation has deteriorated since their last flag was resolved or before any flag has been raised. The dashboard can surface this divergence to prompt TL action.

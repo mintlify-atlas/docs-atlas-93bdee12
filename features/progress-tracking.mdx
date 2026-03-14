@@ -1,0 +1,131 @@
+---
+title: 'Progress tracking'
+description: 'How Kairo tracks your activity completions, evidence submissions, and plan progress — and how notifications keep you informed.'
+keywords: ['progress', 'activity completion', 'evidence', 'notifications', 'dashboard', 'completion percentage']
+---
+
+# Progress tracking
+
+Kairo tracks your learning progress at the activity level. Every activity in your plan can be marked complete, supported with evidence, and annotated with a personal reflection. All of this data feeds the `completion_percentage` shown on your dashboard.
+
+## Tracking features
+
+<CardGroup cols={2}>
+  <Card title="Activity completion" icon="circle-check">
+    Mark any plan activity as complete with `PATCH /api/coder/activities/:id/complete`. You can also record how long you spent and write a reflection when marking an activity done.
+  </Card>
+  <Card title="Evidence submission" icon="paperclip">
+    Attach a file URL or a link URL to any activity as proof of completion. Evidence is stored in the `evidence_submissions` table and is visible to your TL.
+  </Card>
+  <Card title="Progress percentage" icon="chart-pie">
+    The `v_coder_dashboard` view calculates `completion_percentage` in real time as `completed_activities / total_activities × 100`. This value drives the progress bar on your dashboard.
+  </Card>
+  <Card title="Notifications" icon="bell">
+    Unread TL feedback messages appear as a red dot on the notification bell in the topbar. Each message has an `is_read` flag — once you open it, the dot disappears and your TL receives a real-time confirmation.
+  </Card>
+</CardGroup>
+
+## Marking an activity complete
+
+Send a `PATCH` request to mark an activity as done:
+
+```bash
+PATCH /api/coder/activities/:id/complete
+```
+
+```json
+{
+  "reflectionText": "I had to re-read the MDN docs on Promises to understand the chaining order, but finally got it.",
+  "timeSpent": 45
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `reflectionText` | string | Your personal note about what you learned or found difficult |
+| `timeSpent` | integer | Time spent on the activity in minutes |
+
+The backend uses an `INSERT ... ON CONFLICT DO UPDATE` pattern, so calling this endpoint again on the same activity updates the reflection and time without creating a duplicate row.
+
+## Submitting evidence
+
+Evidence is stored in the `evidence_submissions` table. You can attach either a file or a link (or both):
+
+```sql
+CREATE TABLE evidence_submissions (
+  id           SERIAL PRIMARY KEY,
+  activity_id  INT NOT NULL,
+  coder_id     INT NOT NULL,
+  file_url     TEXT,
+  link_url     TEXT,
+  description  TEXT,
+  submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Your TL can see all evidence submissions when reviewing your progress from their dashboard.
+
+## Dashboard data structure
+
+The `v_coder_dashboard` view aggregates all the data shown on your dashboard in a single query:
+
+```sql
+SELECT
+  u.id,
+  u.full_name,
+  u.clan_id,
+  ssa.autonomy,
+  ssa.time_management,
+  ssa.learning_style,
+  m.name              AS module_name,
+  mp.current_week,
+  mp.average_score,
+  COUNT(DISTINCT pa.id)                                          AS total_activities,
+  SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)           AS completed_activities,
+  ROUND(
+    (SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)::NUMERIC /
+     NULLIF(COUNT(DISTINCT pa.id), 0)) * 100, 2
+  )                                                              AS completion_percentage
+FROM users u
+LEFT JOIN soft_skills_assessment ssa ON u.id = ssa.coder_id
+LEFT JOIN moodle_progress mp         ON u.id = mp.coder_id
+LEFT JOIN modules m                  ON mp.module_id = m.id
+LEFT JOIN complementary_plans cp     ON u.id = cp.coder_id AND cp.is_active = TRUE
+LEFT JOIN plan_activities pa         ON cp.id = pa.plan_id
+LEFT JOIN activity_progress ap       ON pa.id = ap.activity_id AND ap.coder_id = u.id
+WHERE u.role = 'coder'
+GROUP BY u.id, u.email, u.full_name, u.clan_id,
+         ssa.autonomy, ssa.time_management, ssa.learning_style,
+         m.name, mp.current_week, mp.average_score;
+```
+
+| Field | Description |
+|-------|-------------|
+| `full_name` | Your display name |
+| `clan_id` | Your assigned clan (e.g. Turing, Tesla, McCarthy) |
+| `learning_style` | Your learning style from the onboarding diagnostic |
+| `autonomy` | Your autonomy score (1–5) |
+| `module_name` | The name of your current bootcamp module |
+| `current_week` | The week you are currently on within the module |
+| `average_score` | Your Moodle average score for the current module |
+| `total_activities` | Total activities in your active plan |
+| `completed_activities` | How many you have marked as complete |
+| `completion_percentage` | `completed / total × 100`, rounded to 2 decimal places |
+
+## Notifications
+
+Your TL can send you feedback at any time. Each message is stored in the `tl_feedback` table with an `is_read` flag defaulting to `false`.
+
+When `is_read` is `false`, a red dot appears on the notification bell in the dashboard topbar. Clicking a notification calls `PATCH /api/coder/feedback/:id/read`, which:
+
+1. Sets `is_read = true` and records `read_at` on the feedback row
+2. Sends a real-time notification to your TL confirming you read their message
+
+```sql
+COMMENT ON COLUMN tl_feedback.is_read IS
+  'false = red dot on the notification bell';
+```
+
+<Note>
+  Notifications are not limited to feedback. The same bell also surfaces any system messages Kairo generates when your plan is ready or when a risk flag is raised on your account.
+</Note>

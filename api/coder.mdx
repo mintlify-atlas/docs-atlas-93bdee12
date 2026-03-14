@@ -1,0 +1,560 @@
+---
+title: "Coder API"
+description: "Endpoints available to authenticated coders: dashboard data, learning plans, exercises, resources, and feedback."
+---
+
+## Overview
+
+All coder endpoints require:
+
+1. **An active session** — the `riwi.sid` cookie set by a successful login or OTP verification.
+2. **Role `coder`** — requests from `tl` accounts receive `403 Forbidden`.
+3. **Completed onboarding** — if `firstLogin` is still `true`, the gateway returns `403` with `redirect: '/onboarding'` until the diagnostic assessment is finished.
+
+**Base URL:** `http://localhost:3000`
+
+All endpoints are mounted under `/api/coder`.
+
+---
+
+## Dashboard
+
+### GET /api/coder/dashboard
+
+Returns everything needed to render the coder's dashboard in a single request: profile, soft skills assessment, Moodle progress, active plan summary, TL feedback (last 5), active risk flags, and recent performance tests.
+
+```bash
+curl http://localhost:3000/api/coder/dashboard \
+  -b cookies.txt
+```
+
+**Response**
+
+<ResponseField name="user" type="object | null">
+  Profile and module info for the authenticated coder.
+  <Expandable title="user fields">
+    <ResponseField name="user.fullName" type="string">Display name.</ResponseField>
+    <ResponseField name="user.email" type="string">Email address.</ResponseField>
+    <ResponseField name="user.clanId" type="number">Assigned clan.</ResponseField>
+    <ResponseField name="user.role" type="string">`coder`.</ResponseField>
+    <ResponseField name="user.moduleId" type="number">Current module ID.</ResponseField>
+    <ResponseField name="user.moduleName" type="string">Current module name.</ResponseField>
+    <ResponseField name="user.moduleTotalWeeks" type="number">Total weeks in the module.</ResponseField>
+    <ResponseField name="user.isModuleCritical" type="boolean">Whether the module is flagged as critical.</ResponseField>
+    <ResponseField name="user.learningStyleCache" type="string | null">Cached learning style from last assessment.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="softSkills" type="object | null">
+  Latest soft-skills assessment scores (1–5 scale).
+  <Expandable title="softSkills fields">
+    <ResponseField name="softSkills.autonomy" type="number">Autonomy score.</ResponseField>
+    <ResponseField name="softSkills.timeManagement" type="number">Time management score.</ResponseField>
+    <ResponseField name="softSkills.problemSolving" type="number">Problem solving score.</ResponseField>
+    <ResponseField name="softSkills.communication" type="number">Communication score.</ResponseField>
+    <ResponseField name="softSkills.teamwork" type="number">Teamwork score.</ResponseField>
+    <ResponseField name="softSkills.learningStyle" type="string">Detected learning style (e.g. `visual`, `auditory`).</ResponseField>
+    <ResponseField name="softSkills.assessedAt" type="string">ISO timestamp of the assessment.</ResponseField>
+    <ResponseField name="softSkills.average" type="number">Mean of all five scores.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="progress" type="object">
+  Latest Moodle progress snapshot.
+  <Expandable title="progress fields">
+    <ResponseField name="progress.currentWeek" type="number">Current week in module (defaults to `1`).</ResponseField>
+    <ResponseField name="progress.averageScore" type="number | null">`null` if no data exists yet.</ResponseField>
+    <ResponseField name="progress.strugglingTopics" type="array">Topics the coder is struggling with.</ResponseField>
+    <ResponseField name="progress.weeksCompleted" type="array">Completed week records.</ResponseField>
+    <ResponseField name="progress.weeksCompletedCount" type="number">Count of completed weeks.</ResponseField>
+    <ResponseField name="progress.updatedAt" type="string | null">ISO timestamp of last progress update.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="activePlan" type="object | null">
+  Summary of the currently active AI-generated complementary plan.
+  <Expandable title="activePlan fields">
+    <ResponseField name="activePlan.id" type="number">Plan ID.</ResponseField>
+    <ResponseField name="activePlan.targetedSoftSkill" type="string">The soft skill the plan focuses on.</ResponseField>
+    <ResponseField name="activePlan.planType" type="string">Plan type (e.g. `interpretive`).</ResponseField>
+    <ResponseField name="activePlan.generatedAt" type="string">ISO timestamp of plan generation.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="notifications" type="object">
+  Recent TL feedback items.
+  <Expandable title="notifications fields">
+    <ResponseField name="notifications.unread" type="number">Count of unread feedback items.</ResponseField>
+    <ResponseField name="notifications.items" type="array">Last 5 feedback messages from the TL.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="riskFlags" type="array">
+  Active (unresolved) risk flags for this coder.
+  <Expandable title="riskFlags item fields">
+    <ResponseField name="level" type="string">`medium`, `high`, or `critical`.</ResponseField>
+    <ResponseField name="reason" type="string">Human-readable reason for the flag.</ResponseField>
+    <ResponseField name="detectedAt" type="string">ISO timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="performanceTests" type="array">
+  Last 3 performance test results.
+  <Expandable title="performanceTests item fields">
+    <ResponseField name="score" type="number">Test score.</ResponseField>
+    <ResponseField name="status" type="string">Pass/fail status.</ResponseField>
+    <ResponseField name="moduleName" type="string">Module the test belongs to.</ResponseField>
+    <ResponseField name="takenAt" type="string">ISO timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json 200
+{
+  "user": {
+    "fullName": "Ana Torres",
+    "email": "ana@riwi.io",
+    "clanId": 3,
+    "role": "coder",
+    "moduleId": 4,
+    "moduleName": "Bases de Datos",
+    "moduleTotalWeeks": 8,
+    "isModuleCritical": false,
+    "learningStyleCache": "visual"
+  },
+  "softSkills": {
+    "autonomy": 4,
+    "timeManagement": 3,
+    "problemSolving": 5,
+    "communication": 4,
+    "teamwork": 4,
+    "learningStyle": "visual",
+    "assessedAt": "2025-11-01T10:00:00Z",
+    "average": 4.0
+  },
+  "progress": {
+    "currentWeek": 3,
+    "averageScore": 78.5,
+    "strugglingTopics": ["SQL joins"],
+    "weeksCompleted": [],
+    "weeksCompletedCount": 2,
+    "updatedAt": "2025-11-10T08:00:00Z"
+  },
+  "activePlan": {
+    "id": 17,
+    "targetedSoftSkill": "time_management",
+    "planType": "interpretive",
+    "generatedAt": "2025-11-05T12:00:00Z"
+  },
+  "notifications": { "unread": 2, "items": [] },
+  "riskFlags": [],
+  "performanceTests": []
+}
+```
+
+---
+
+## Learning Plans
+
+### GET /api/coder/plan
+
+Returns the full active AI-generated complementary plan including all 20 days and the coder's completion state.
+
+```bash
+curl http://localhost:3000/api/coder/plan \
+  -b cookies.txt
+```
+
+<ResponseField name="hasPlan" type="boolean">
+  `false` when no active plan exists.
+</ResponseField>
+
+<ResponseField name="plan" type="object | null">
+  Full plan detail when `hasPlan` is `true`.
+  <Expandable title="plan fields">
+    <ResponseField name="plan.id" type="number">Plan ID.</ResponseField>
+    <ResponseField name="plan.moduleId" type="number">Module this plan targets.</ResponseField>
+    <ResponseField name="plan.planContent" type="object">AI-generated daily content (20 days).</ResponseField>
+    <ResponseField name="plan.targetedSoftSkill" type="string">Soft skill being developed.</ResponseField>
+    <ResponseField name="plan.generatedAt" type="string">ISO generation timestamp.</ResponseField>
+    <ResponseField name="plan.completedDays" type="object">Map of `{"1": {completedAt: ...}, ...}` for completed days.</ResponseField>
+    <ResponseField name="plan.currentDay" type="number">First incomplete day number (1–20).</ResponseField>
+    <ResponseField name="plan.completedCount" type="number">Total completed days.</ResponseField>
+    <ResponseField name="plan.isComplete" type="boolean">`true` when all 20 days are done.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json 200 — active plan
+{
+  "hasPlan": true,
+  "plan": {
+    "id": 17,
+    "moduleId": 4,
+    "targetedSoftSkill": "time_management",
+    "generatedAt": "2025-11-05T12:00:00Z",
+    "completedDays": {
+      "1": { "completedAt": "2025-11-06T09:00:00Z" }
+    },
+    "currentDay": 2,
+    "completedCount": 1,
+    "isComplete": false
+  }
+}
+```
+
+```json 200 — no plan
+{ "hasPlan": false, "plan": null }
+```
+
+---
+
+### POST /api/coder/plan/request
+
+Triggers AI plan generation for the coder. The request returns immediately; plan generation happens asynchronously via the Python AI service.
+
+**Request body**
+
+<ParamField body="plan_type" type="string">
+  Plan type to generate. Defaults to `interpretive`.
+</ParamField>
+
+<ParamField body="current_week" type="number">
+  Current week number within the module. Defaults to `1`.
+</ParamField>
+
+```json 200
+{
+  "requested": true,
+  "message": "Plan en generación. Reintenta en unos segundos."
+}
+```
+
+---
+
+### GET /api/coder/plans/:planId
+
+Returns the full detail of a specific complementary plan, including all associated activities.
+
+**Path parameter**
+
+<ParamField path="planId" type="number" required>
+  ID of the plan to retrieve. Must belong to the authenticated coder.
+</ParamField>
+
+<ResponseField name="plan" type="object">
+  Plan record with an `activities` array aggregated from `plan_activities`.
+</ResponseField>
+
+```json 200
+{ "plan": { "id": 17, "activities": [ ...activityObjects ] } }
+```
+
+```json 404
+{ "error": "Plan not found" }
+```
+
+---
+
+### POST /api/coder/plan/:planId/day/:day/complete
+
+Marks a specific day in the active plan as completed.
+
+**Path parameters**
+
+<ParamField path="planId" type="number" required>
+  ID of the active plan.
+</ParamField>
+
+<ParamField path="day" type="number" required>
+  Day number to mark complete. Must be between `1` and `20`.
+</ParamField>
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="completedDays" type="object">Updated map of all completed days.</ResponseField>
+<ResponseField name="completedCount" type="number">Total days completed so far.</ResponseField>
+<ResponseField name="nextDay" type="number | null">Next incomplete day, or `null` if the plan is finished.</ResponseField>
+<ResponseField name="isComplete" type="boolean">`true` when all 20 days are done.</ResponseField>
+
+```json 200
+{
+  "success": true,
+  "completedDays": {
+    "1": { "completedAt": "2025-11-06T09:00:00Z" },
+    "2": { "completedAt": "2025-11-07T10:30:00Z" }
+  },
+  "completedCount": 2,
+  "nextDay": 3,
+  "isComplete": false
+}
+```
+
+```json 400
+{ "error": "Día inválido. Debe ser entre 1 y 20." }
+```
+
+```json 404
+{ "error": "Plan no encontrado o inactivo." }
+```
+
+---
+
+## Activities
+
+### PATCH /api/coder/activities/:id/complete
+
+Records completion of a plan activity, storing a reflection note and time spent.
+
+**Path parameter**
+
+<ParamField path="id" type="number" required>
+  ID of the `plan_activities` record to complete.
+</ParamField>
+
+**Request body**
+
+<ParamField body="reflectionText" type="string">
+  The coder's written reflection on the activity.
+</ParamField>
+
+<ParamField body="timeSpent" type="number">
+  Minutes spent on the activity.
+</ParamField>
+
+```json 200
+{ "success": true, "data": { ...activityProgressRecord } }
+```
+
+---
+
+### GET /api/coder/milestones
+
+Returns the coder's Moodle progress milestones grouped by module and week.
+
+```bash
+curl http://localhost:3000/api/coder/milestones \
+  -b cookies.txt
+```
+
+<ResponseField name="milestones" type="array">
+  Array of milestone objects.
+  <Expandable title="milestone fields">
+    <ResponseField name="module_name" type="string">Module name.</ResponseField>
+    <ResponseField name="week_number" type="number">Week number.</ResponseField>
+    <ResponseField name="week_name" type="string">Week label.</ResponseField>
+    <ResponseField name="average_score" type="number">Average score for that week.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json 200
+{
+  "milestones": [
+    {
+      "module_name": "Bases de Datos",
+      "week_number": 1,
+      "week_name": "Introducción",
+      "average_score": 82
+    }
+  ]
+}
+```
+
+---
+
+## Exercises
+
+### POST /api/coder/exercise/generate
+
+Generates a coding exercise for a specific day in the coder's plan. Returns a cached exercise if one already exists for that plan/day combination; otherwise calls the Python AI service.
+
+**Request body**
+
+<ParamField body="planId" type="number" required>
+  ID of the active complementary plan.
+</ParamField>
+
+<ParamField body="dayNumber" type="number" required>
+  Day number within the plan (1–20).
+</ParamField>
+
+<ParamField body="topic" type="string" required>
+  Topic for the exercise (e.g. `"SQL joins"`).
+</ParamField>
+
+<ParamField body="weekNumber" type="number">
+  Week number within the module. Defaults to `1`.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Additional context or instructions for the AI.
+</ParamField>
+
+<ParamField body="difficulty" type="string">
+  `beginner`, `intermediate`, or `advanced`. Defaults to `intermediate`.
+</ParamField>
+
+<ParamField body="moduleName" type="string">
+  Module name passed to the AI for context. Defaults to `"Bases de Datos"`.
+</ParamField>
+
+<ParamField body="language" type="string">
+  Programming language (e.g. `"python"`, `"sql"`). `null` lets the AI decide.
+</ParamField>
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="exercise" type="object">Generated exercise object with `title`, `description`, `language`, `starter_code`, `hints`, `topic`, `difficulty`, `expected_output`.</ResponseField>
+<ResponseField name="cached" type="boolean">Present and `true` when a cached exercise was returned.</ResponseField>
+
+```json 200
+{
+  "success": true,
+  "exercise": {
+    "id": 88,
+    "title": "SQL INNER JOIN Challenge",
+    "description": "Write a query that joins the orders and customers tables.",
+    "language": "sql",
+    "starter_code": "SELECT ... FROM orders o ...",
+    "hints": ["Use INNER JOIN", "Match on customer_id"],
+    "topic": "SQL joins",
+    "difficulty": "intermediate",
+    "expected_output": "List of orders with customer names"
+  },
+  "cached": true
+}
+```
+
+---
+
+### POST /api/coder/exercise/:exerciseId/submit
+
+Submits a code solution for an exercise. The submission is stored for TL review.
+
+**Path parameter**
+
+<ParamField path="exerciseId" type="number" required>
+  ID of the exercise to submit against.
+</ParamField>
+
+**Request body**
+
+<ParamField body="code" type="string" required>
+  The coder's solution code. Must not be empty.
+</ParamField>
+
+```json 200
+{
+  "success": true,
+  "submissionId": 203,
+  "message": "¡Solución enviada! Tu TL podrá revisarla."
+}
+```
+
+```json 400
+{ "error": "El campo code no puede estar vacío." }
+```
+
+```json 404
+{ "error": "Ejercicio no encontrado." }
+```
+
+---
+
+### GET /api/coder/exercise/:exerciseId/submissions
+
+Returns the coder's last 5 submissions for a given exercise.
+
+**Path parameter**
+
+<ParamField path="exerciseId" type="number" required>
+  Exercise ID.
+</ParamField>
+
+<ResponseField name="submissions" type="array">
+  Up to 5 most recent submissions, ordered newest first.
+  <Expandable title="submission fields">
+    <ResponseField name="id" type="number">Submission ID.</ResponseField>
+    <ResponseField name="code_submitted" type="string">The submitted code.</ResponseField>
+    <ResponseField name="submitted_at" type="string">ISO submission timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Resources
+
+### GET /api/coder/resources
+
+Lists PDF resources uploaded by the clan's TL. Optionally filtered by module.
+
+**Query parameters**
+
+<ParamField query="moduleId" type="number">
+  Filter resources by module ID.
+</ParamField>
+
+<ResponseField name="resources" type="array">
+  Resources accessible to the coder's clan.
+  <Expandable title="resource fields">
+    <ResponseField name="id" type="number">Resource ID.</ResponseField>
+    <ResponseField name="title" type="string">Resource title.</ResponseField>
+    <ResponseField name="file_name" type="string">Original file name.</ResponseField>
+    <ResponseField name="preview_text" type="string">Extracted text preview.</ResponseField>
+    <ResponseField name="uploaded_at" type="string">Upload timestamp.</ResponseField>
+    <ResponseField name="module_id" type="number">Associated module.</ResponseField>
+    <ResponseField name="module_name" type="string">Module name.</ResponseField>
+    <ResponseField name="tl_name" type="string">Name of the TL who uploaded it.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### GET /api/coder/resource/:id/download
+
+Generates a temporary signed URL (valid for 1 hour) for downloading a resource PDF.
+
+**Path parameter**
+
+<ParamField path="id" type="number" required>
+  Resource ID. Must belong to the coder's clan.
+</ParamField>
+
+```json 200
+{
+  "url": "https://storage.example.com/signed?token=...",
+  "fileName": "module4-week3-guide.pdf"
+}
+```
+
+```json 404
+{ "error": "Recurso no encontrado o no autorizado." }
+```
+
+---
+
+### POST /api/coder/resources/search
+
+Semantic search endpoint. Currently returns an empty result set — semantic search via the Python RAG service is disabled.
+
+```json 200
+{ "success": true, "resources": [], "reason": "semantic_search_disabled" }
+```
+
+---
+
+## Feedback
+
+### PATCH /api/coder/feedback/:id/read
+
+Marks a TL feedback item as read and sends a real-time notification to the TL.
+
+**Path parameter**
+
+<ParamField path="id" type="number" required>
+  ID of the `tl_feedback` record. Must belong to the authenticated coder.
+</ParamField>
+
+```json 200
+{ "success": true, "message": "Feedback marked as read" }
+```
+
+```json 404
+{ "error": "Feedback not found" }
+```

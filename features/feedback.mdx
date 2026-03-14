@@ -1,0 +1,97 @@
+---
+title: 'Feedback & Messaging'
+description: 'How Team Leaders send structured feedback to coders and how the notification system delivers it in real time.'
+keywords: ['feedback', 'messaging', 'notifications', 'tl_feedback', 'is_read', 'SSE']
+---
+
+Kairo's feedback system gives Team Leaders a direct, structured channel to communicate with individual coders. Messages are stored in the `tl_feedback` table, delivered instantly via Server-Sent Events, and tracked with a read receipt — so TLs always know whether their feedback has been seen.
+
+## Sending feedback
+
+TLs submit feedback from the coder detail panel in the dashboard. The form calls `POST /api/tl/feedback` with the following body:
+
+```json
+{
+  "coderId": 17,
+  "feedbackText": "Your progress on the REST module this week is solid. Focus on improving your error handling patterns before the next assessment.",
+  "feedbackType": "weekly"
+}
+```
+
+The controller writes the record to `tl_feedback` and immediately dispatches a real-time notification to the coder using the `notifyUser` service.
+
+## The `tl_feedback` table
+
+```sql
+CREATE TABLE tl_feedback (
+  id            SERIAL PRIMARY KEY,
+  coder_id      INT NOT NULL,
+  tl_id         INT NOT NULL,
+  plan_id       INT,                          -- optional: links to a specific learning plan
+  feedback_text TEXT NOT NULL,
+  feedback_type feedback_type_enum,           -- 'weekly', 'activity', 'general'
+  is_read       BOOLEAN DEFAULT FALSE,
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+| Field | Description |
+|-------|-------------|
+| `coder_id` | The coder receiving the feedback |
+| `tl_id` | The Team Leader who authored the message |
+| `plan_id` | Optional reference to a `complementary_plans` record; links feedback to a specific learning plan |
+| `feedback_text` | The full text of the feedback message |
+| `feedback_type` | Categorizes the message: `weekly`, `activity`, or `general` |
+| `is_read` | `false` when delivered, set to `true` when the coder views the message |
+| `created_at` | Timestamp of when the feedback was submitted |
+
+## Feedback types
+
+The `feedback_type_enum` defines three categories that help coders understand the context of each message:
+
+```sql
+CREATE TYPE feedback_type_enum AS ENUM ('weekly', 'activity', 'general');
+```
+
+| Type | When to use |
+|------|-------------|
+| `weekly` | End-of-week performance summary or progress check-in |
+| `activity` | Feedback tied to a specific plan activity or assignment; use alongside `plan_id` |
+| `general` | Open-ended coaching, encouragement, or an administrative note |
+
+<Tip>
+Use `activity` feedback type together with the `plan_id` field when coaching a coder on a specific learning plan. This links the message directly to the relevant plan record, making it easier for the coder to connect your feedback to the activity they are working on.
+</Tip>
+
+## Feedback workflow
+
+<Steps>
+  <Step title="TL writes feedback">
+    The TL selects a coder in the dashboard, chooses a feedback type (`weekly`, `activity`, or `general`), writes their message, and clicks **Send**. The request hits `POST /api/tl/feedback`.
+  </Step>
+  <Step title="Feedback stored and notification dispatched">
+    The controller inserts a new row into `tl_feedback` with `is_read = false`. It then calls `notifyUser`, which pushes a real-time notification through the open SSE stream (`GET /api/notifications/stream`) to the coder's active session.
+  </Step>
+  <Step title="Coder sees the notification">
+    A red dot appears on the coder's notification bell (`#notif-dot` in the UI). The notification title reads **"Nuevo Feedback Requerido"** followed by the first 50 characters of the message.
+  </Step>
+  <Step title="Coder reads the message">
+    The coder opens the notification panel. Calling `POST /api/notifications/read` marks all notifications as `is_read = true` in the `notifications` table, clearing the red dot.
+  </Step>
+</Steps>
+
+## Notification delivery
+
+Notifications are delivered using Server-Sent Events. The coder's browser maintains a persistent connection to `GET /api/notifications/stream`. When the TL submits feedback, the `notifyUser` service writes to the `notifications` table and pushes the event over the open SSE connection without requiring a page refresh.
+
+The notifications table stores up to 30 recent notifications per user, returned by `GET /api/notifications` ordered by `created_at DESC`.
+
+<Info>
+Feedback messages and platform notifications use two separate tables: `tl_feedback` stores the full structured feedback record (with type, plan link, and read status), while `notifications` stores the lightweight delivery event shown in the bell dropdown. The `is_read` flag on `tl_feedback` tracks whether the coder has engaged with the feedback content itself.
+</Info>
+
+## Messages view
+
+The Messages page (`/views/tl/messages.html`) provides a chat-style interface where TLs can see a list of coders they have messaged and review the conversation thread. The left panel lists recent contacts; the right panel shows the message history with the selected coder.
+
+This view is supplementary to the dashboard feedback panel — it is useful for reviewing past feedback threads, while the dashboard panel is the primary surface for sending new messages.

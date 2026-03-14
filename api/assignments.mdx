@@ -1,0 +1,280 @@
+---
+title: "Assignments"
+description: "Endpoints for creating, listing, and downloading assignments (PDF or repository links) published by Team Leaders to their coders."
+---
+
+## Overview
+
+Assignments are published by Team Leaders and visible to the coders in their clan (or all coders, depending on scope). They can carry a PDF attachment stored in Supabase Storage or a repository URL.
+
+Role-specific access:
+
+- **TL** — create, list own assignments, delete.
+- **Coder** — list visible assignments, download PDFs.
+- **Both** — shared notification endpoints (these duplicate the `/api/notifications` routes).
+
+**Base URL:** `http://localhost:3000`
+
+Assignment routes are mounted directly under `/api` (not under a role-specific prefix).
+
+<Note>
+  File uploads are handled as `multipart/form-data`. Maximum PDF size is **20 MB**. Only `application/pdf` files are accepted.
+</Note>
+
+---
+
+## TL — Create Assignment
+
+### POST /api/tl/assignment
+
+Publishes a new assignment. Depending on `contentType`, either a PDF file or a repository URL is required. After creation, all relevant active coders receive a real-time notification.
+
+```bash
+curl -X POST http://localhost:3000/api/tl/assignment \
+  -b cookies.txt \
+  -F "title=Proyecto Final Módulo 4" \
+  -F "scope=clan" \
+  -F "contentType=pdf" \
+  -F "moduleId=4" \
+  -F "deadline=2025-12-01" \
+  -F "file=@project-brief.pdf"
+```
+
+**Auth required:** Yes — role must be `tl`
+
+**Request body** (`multipart/form-data`)
+
+<ParamField body="title" type="string" required>
+  Assignment title displayed to coders.
+</ParamField>
+
+<ParamField body="contentType" type="string" required>
+  `pdf` — requires a `file` field. `repo` — requires a `repoUrl` field.
+</ParamField>
+
+<ParamField body="scope" type="string" required>
+  `clan` — visible only to coders in the TL's clan. `all` — visible to every active coder.
+</ParamField>
+
+<ParamField body="file" type="file">
+  PDF file. Required when `contentType` is `pdf`. Maximum 20 MB.
+</ParamField>
+
+<ParamField body="repoUrl" type="string">
+  Repository URL. Required when `contentType` is `repo`.
+</ParamField>
+
+<ParamField body="moduleId" type="number">
+  Module ID to associate the assignment with.
+</ParamField>
+
+<ParamField body="deadline" type="string">
+  Deadline date in ISO format (e.g. `2025-12-01`).
+</ParamField>
+
+**Response**
+
+<ResponseField name="success" type="boolean">`true` on successful creation.</ResponseField>
+<ResponseField name="assignmentId" type="number">ID of the newly created assignment.</ResponseField>
+<ResponseField name="notified" type="number">Number of coders who received a notification.</ResponseField>
+
+```json 200
+{
+  "success": true,
+  "assignmentId": 55,
+  "notified": 12
+}
+```
+
+```json 400
+{ "error": "Faltan campos requeridos: título, tipo y alcance." }
+```
+
+```json 400
+{ "error": "Se requiere la URL del repositorio." }
+```
+
+```json 400
+{ "error": "Se requiere un archivo PDF." }
+```
+
+---
+
+## TL — List Assignments
+
+### GET /api/tl/assignments
+
+Returns all active assignments created by the authenticated TL, ordered newest first.
+
+```bash
+curl http://localhost:3000/api/tl/assignments \
+  -b cookies.txt
+```
+
+**Auth required:** Yes — role must be `tl`
+
+<ResponseField name="assignments" type="array">
+  <Expandable title="assignment fields">
+    <ResponseField name="id" type="number">Assignment ID.</ResponseField>
+    <ResponseField name="tl_id" type="number">ID of the TL who created it.</ResponseField>
+    <ResponseField name="clan_id" type="number | null">Clan scope (`null` when `scope` is `all`).</ResponseField>
+    <ResponseField name="scope" type="string">`clan` or `all`.</ResponseField>
+    <ResponseField name="title" type="string">Assignment title.</ResponseField>
+    <ResponseField name="module_id" type="number | null">Associated module.</ResponseField>
+    <ResponseField name="module_name" type="string | null">Module name.</ResponseField>
+    <ResponseField name="content_type" type="string">`pdf` or `repo`.</ResponseField>
+    <ResponseField name="storage_path" type="string | null">Supabase storage path for PDFs.</ResponseField>
+    <ResponseField name="repo_url" type="string | null">Repository URL for repo-type assignments.</ResponseField>
+    <ResponseField name="file_name" type="string | null">Original PDF filename.</ResponseField>
+    <ResponseField name="deadline" type="string | null">Deadline date.</ResponseField>
+    <ResponseField name="is_active" type="boolean">`true` for visible assignments.</ResponseField>
+    <ResponseField name="created_at" type="string">ISO creation timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json 200
+{
+  "assignments": [
+    {
+      "id": 55,
+      "tl_id": 5,
+      "clan_id": 3,
+      "scope": "clan",
+      "title": "Proyecto Final Módulo 4",
+      "module_id": 4,
+      "module_name": "Bases de Datos",
+      "content_type": "pdf",
+      "storage_path": "clan3/module-4/1699999999999_project-brief.pdf",
+      "repo_url": null,
+      "file_name": "project-brief.pdf",
+      "deadline": "2025-12-01",
+      "is_active": true,
+      "created_at": "2025-11-10T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+## TL — Delete Assignment
+
+### DELETE /api/tl/assignment/:id
+
+Soft-deletes an assignment by setting `is_active = false`. The record remains in the database but becomes invisible to coders. Only the TL who created the assignment can delete it.
+
+```bash
+curl -X DELETE http://localhost:3000/api/tl/assignment/55 \
+  -b cookies.txt
+```
+
+**Auth required:** Yes — role must be `tl`
+
+**Path parameter**
+
+<ParamField path="id" type="number" required>
+  ID of the assignment to delete.
+</ParamField>
+
+```json 200
+{ "success": true }
+```
+
+```json 404
+{ "error": "Actividad no encontrada o sin permisos." }
+```
+
+---
+
+## Coder — List Assignments
+
+### GET /api/coder/assignments
+
+Returns all active assignments visible to the authenticated coder. Includes assignments scoped to `all` and assignments scoped to the coder's clan.
+
+```bash
+curl http://localhost:3000/api/coder/assignments \
+  -b cookies.txt
+```
+
+**Auth required:** Yes — role must be `coder`
+
+<ResponseField name="assignments" type="array">
+  <Expandable title="assignment fields">
+    <ResponseField name="id" type="number">Assignment ID.</ResponseField>
+    <ResponseField name="scope" type="string">`clan` or `all`.</ResponseField>
+    <ResponseField name="title" type="string">Assignment title.</ResponseField>
+    <ResponseField name="module_id" type="number | null">Module ID.</ResponseField>
+    <ResponseField name="module_name" type="string | null">Module name.</ResponseField>
+    <ResponseField name="content_type" type="string">`pdf` or `repo`.</ResponseField>
+    <ResponseField name="repo_url" type="string | null">Repository URL (for repo-type).</ResponseField>
+    <ResponseField name="file_name" type="string | null">PDF filename (for pdf-type).</ResponseField>
+    <ResponseField name="deadline" type="string | null">Deadline date.</ResponseField>
+    <ResponseField name="tl_name" type="string">Name of the TL who published it.</ResponseField>
+    <ResponseField name="created_at" type="string">ISO creation timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json 200
+{
+  "assignments": [
+    {
+      "id": 55,
+      "scope": "clan",
+      "title": "Proyecto Final Módulo 4",
+      "module_id": 4,
+      "module_name": "Bases de Datos",
+      "content_type": "pdf",
+      "repo_url": null,
+      "file_name": "project-brief.pdf",
+      "deadline": "2025-12-01",
+      "tl_name": "Carlos Méndez",
+      "created_at": "2025-11-10T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+## Coder — Download Assignment PDF
+
+### GET /api/coder/assignment/:id/download
+
+Generates a temporary signed URL (valid for 1 hour) for downloading the PDF attached to an assignment. Returns `400` if the assignment does not have a PDF (`content_type` is `repo`).
+
+```bash
+curl http://localhost:3000/api/coder/assignment/55/download \
+  -b cookies.txt
+```
+
+**Auth required:** Yes — role must be `coder`
+
+**Path parameter**
+
+<ParamField path="id" type="number" required>
+  ID of the assignment. Must be visible to the coder (scope `all` or matching clan).
+</ParamField>
+
+<ResponseField name="url" type="string">
+  Time-limited signed URL for direct PDF download from Supabase Storage. Valid for 1 hour.
+</ResponseField>
+
+<ResponseField name="fileName" type="string">
+  Original filename of the PDF.
+</ResponseField>
+
+```json 200
+{
+  "url": "https://storage.example.com/assignment-files/...?token=...",
+  "fileName": "project-brief.pdf"
+}
+```
+
+```json 400
+{ "error": "Esta actividad no tiene PDF." }
+```
+
+```json 404
+{ "error": "No encontrado." }
+```

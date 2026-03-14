@@ -1,0 +1,133 @@
+---
+title: "Database Setup"
+description: "Provision a Supabase PostgreSQL project and apply the Kairo schema, RLS policies, seed data, and migrations."
+---
+
+Kairo uses **PostgreSQL** hosted on [Supabase](https://supabase.com). Supabase provides the database, Row Level Security enforcement, and the JS/service-role clients used by both backends.
+
+## Setup steps
+
+<Steps>
+  <Step title="Create a Supabase project">
+    Go to [supabase.com](https://supabase.com) and create a new project. Choose a region close to your users and set a strong database password — you will need it for the connection string.
+
+    Once the project is ready, navigate to **Project Settings → API** and copy:
+    - **Project URL** → `SUPABASE_URL`
+    - **anon / public key** → `SUPABASE_ANON_KEY`
+    - **service_role key** → `SUPABASE_SERVICE_KEY`
+
+    Navigate to **Project Settings → Database** and copy the connection details:
+    - **Host** → `DB_HOST`
+    - **Database name** → `DB_NAME`
+    - **User** → `DB_USER`
+    - **Password** → `DB_PASSWORD`
+    - **Connection string (URI)** → `DATABASE_URL`
+  </Step>
+
+  <Step title="Add credentials to your .env files">
+    Paste the values from the previous step into both `backend-node/.env` and `backend-python/.env` as described in [Environment Configuration](/setup/environment).
+  </Step>
+
+  <Step title="Run the main schema">
+    Open the Supabase **SQL Editor** and run the entire contents of `database/schema.sql`. This creates all enum types, tables, indexes, and the two dashboard views.
+
+    ```sql
+    -- Run via Supabase SQL Editor or psql:
+    \i database/schema.sql
+    ```
+
+    Alternatively, using `psql` directly:
+
+    ```bash
+    psql "$DATABASE_URL" -f database/schema.sql
+    ```
+  </Step>
+
+  <Step title="Apply Row Level Security policies">
+    Run `database/rls_policies.sql` to enable RLS on all tables and create the access policies that enforce coder/TL data separation.
+
+    ```bash
+    psql "$DATABASE_URL" -f database/rls_policies.sql
+    ```
+
+    Or paste the file contents into the Supabase SQL Editor.
+  </Step>
+
+  <Step title="Load seed data">
+    Run the seed file to populate the database with sample users, modules, soft-skills assessments, and academic progress for development and testing.
+
+    ```bash
+    psql "$DATABASE_URL" -f database/seeds/users.sql
+    ```
+
+    This inserts 8 users (2 TLs and 6 coders across three clans), 6 bootcamp modules, and initial Moodle progress records.
+
+    Verify the seed completed successfully:
+
+    ```sql
+    SELECT COUNT(*) FROM users;                  -- Expected: 8
+    SELECT COUNT(*) FROM modules;                -- Expected: 6
+    SELECT COUNT(*) FROM soft_skills_assessment; -- Expected: 6
+    ```
+  </Step>
+
+  <Step title="Run migrations">
+    Apply the migration files in order to bring the schema up to date. Run each file sequentially:
+
+    ```bash
+    psql "$DATABASE_URL" -f database/migrations/001_add_clans_and_priority_and_notifications.sql
+    psql "$DATABASE_URL" -f database/migrations/002_add_raw_answers_to_soft_skills.sql
+    psql "$DATABASE_URL" -f database/migrations/005_create_user_profiles.sql
+    ```
+
+    | Migration file | What it adds |
+    |---|---|
+    | `001_add_clans_and_priority_and_notifications.sql` | `clan_id` on `users`; `priority_level` enum and column on `complementary_plans`; `is_read` notification flag on `tl_feedback`. |
+    | `002_add_raw_answers_to_soft_skills.sql` | `raw_answers JSONB` column on `soft_skills_assessment` for onboarding answer auditing. |
+    | `005_create_user_profiles.sql` | New `user_profiles` table for extended personal and social data (phone, bio, GitHub/LinkedIn/portfolio URLs). |
+  </Step>
+</Steps>
+
+## Tables
+
+The main schema creates the following tables:
+
+| Table | Description |
+|---|---|
+| `users` | All platform users — both coders and Team Leaders. Stores email, hashed password, full name, role, and clan assignment. |
+| `soft_skills_assessment` | One-per-coder onboarding assessment. Records scores (1–5) for autonomy, time management, problem solving, communication, and teamwork, plus the detected learning style. |
+| `modules` | Bootcamp modules (e.g. Fundamentos de Python, JavaScript, React). Each module has a name, description, and total week count. |
+| `moodle_progress` | Academic progress per coder per module. Tracks current week, completed weeks, struggling topics, and average score imported from Moodle. |
+| `topics` | Individual topics within each module (e.g. Async/Await, Flexbox and Grid). Used to record where a coder is struggling. |
+| `coder_struggling_topics` | N:M join table between `users` (coders) and `topics`. Records which topics each coder has self-reported as difficult. |
+| `complementary_plans` | The 6 AI-generated learning plan cards assigned to a coder. Stores the full plan content as JSONB, priority level, and snapshots of the input data used to generate the plan. |
+| `plan_activities` | Individual daily activities belonging to a complementary plan. Each activity has a day number, title, description, estimated time, type, and skill focus. |
+| `activity_progress` | Tracks completion of each activity per coder. Stores completion flag, reflection text, and time spent. |
+| `evidence_submissions` | File or link evidence uploaded by coders to support completed activities. |
+| `tl_feedback` | Messages and feedback sent by Team Leaders to individual coders. Includes a read/unread flag that drives the notification bell indicator. |
+| `risk_flags` | Automated risk alerts generated when a coder's academic or soft-skills data crosses risk thresholds. Stores risk level, reason, and resolution status. |
+| `ai_reports` | Executive summary reports generated by the AI for Team Leaders, covering individual coders, clans, or full cohorts. |
+| `ai_generation_log` | Audit log of every AI call. Records agent type, input/output payloads, model name, execution time, and success status. |
+
+## Custom enum types
+
+The schema defines eight PostgreSQL enum types to enforce valid values at the database level:
+
+| Enum | Values |
+|---|---|
+| `role_enum` | `coder`, `tl` |
+| `learning_style_enum` | `visual`, `auditory`, `kinesthetic`, `mixed` |
+| `activity_type_enum` | `guided`, `semi_guided`, `autonomous` |
+| `feedback_type_enum` | `weekly`, `activity`, `general` |
+| `risk_level_enum` | `low`, `medium`, `high` |
+| `report_target_enum` | `coder`, `clan`, `cohort` |
+| `ai_agent_enum` | `learning_plan`, `report_generator`, `risk_detector` |
+| `priority_level_enum` | `low`, `medium`, `high` |
+
+## Database views
+
+Two prebuilt views simplify the most common dashboard queries:
+
+**`v_coder_dashboard`** — Used by the coder-facing dashboard. For each coder it exposes: user identity and clan, soft-skills scores (autonomy, time management, learning style), active module name, current week, average Moodle score, total activities, completed activities, and overall completion percentage.
+
+**`v_coder_risk_analysis`** — Used by the TL analytics panel. For each coder it exposes: the stored `risk_level` from `risk_flags`, a `calculated_risk_level` derived from autonomy score and average Moodle score, activity totals, and the underlying soft-skills and academic data that drove the risk calculation.

@@ -1,0 +1,107 @@
+---
+title: "Running the Platform"
+description: "Start all three Kairo processes — the Node.js orchestrator, the Python AI microservice, and the frontend — in the correct order."
+---
+
+Kairo is a distributed system. **Three processes must run simultaneously** for the platform to function:
+
+| Process | Role | Port |
+|---|---|---|
+| Node.js backend | API gateway, auth, business logic | `3000` |
+| Python AI service | LLM inference, plan generation, risk detection | `8000` |
+| Frontend | Static multi-page app served by Live Server | `5500` |
+
+<Tip>
+Open three split terminal panes side by side before starting. This lets you monitor all three logs at once and spot connection errors immediately.
+</Tip>
+
+## Startup sequence
+
+Start the services in the order below. The Node.js gateway must be reachable before the Python service registers its CORS origins, and both backends must be running before you open the frontend.
+
+<Steps>
+  <Step title="Start the Node.js orchestrator">
+    ```bash
+    cd backend-node
+    npm install
+    npm run dev
+    ```
+
+    Wait until you see the confirmation message in the terminal:
+
+    ```
+    KAIRO API GATEWAY STARTED SUCCESSFULLY
+    ```
+
+    <Note>
+      Run `npm run dev:basic` instead to start the gateway in basic mode, which disables AI feature endpoints. This is useful for working on auth, database, or frontend tasks without requiring the Python service.
+    </Note>
+  </Step>
+
+  <Step title="Start the Python AI brain">
+    <Tabs>
+      <Tab title="Linux / macOS">
+        ```bash
+        cd backend-python
+        python3 -m venv env
+        source env/bin/activate
+        pip install -r requirements.txt
+        uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```powershell
+        cd backend-python
+        python -m venv env
+        env\Scripts\Activate.ps1
+        pip install -r requirements.txt
+        uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+        ```
+      </Tab>
+    </Tabs>
+
+    Wait until you see the confirmation message in the terminal:
+
+    ```
+    INFO: Supabase client initialized
+    ```
+
+    The startup log also prints the active LLM model, embedding model status, environment, and allowed CORS origins.
+
+    <Note>
+      On first run, `pip install -r requirements.txt` downloads the `all-MiniLM-L6-v2` sentence-transformer model used for embeddings. This can take a few minutes depending on your connection speed.
+    </Note>
+  </Step>
+
+  <Step title="Serve the frontend">
+    The frontend is a static multi-page application served directly from the `frontend/` directory.
+
+    **Recommended — VS Code Live Server:**
+
+    Install the [Live Server extension](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) for VS Code, then click **Go Live** in the status bar. Live Server defaults to port `5500`.
+
+    **Alternative — npx serve:**
+
+    ```bash
+    npx serve -p 5500
+    ```
+
+    Open the platform in your browser at:
+
+    ```
+    http://127.0.0.1:5500/frontend
+    ```
+
+    <Note>
+      The `FRONTEND_URL` in `backend-node/.env` is set to `http://127.0.0.1:5500/frontend`. If you use a different port or address, update that variable and restart the Node.js server.
+    </Note>
+  </Step>
+</Steps>
+
+## Port reference
+
+| Service | Default port | Variable |
+|---|---|---|
+| Node.js API gateway | `3000` | `PORT` in `backend-node/.env` |
+| Python AI microservice | `8000` | `PORT` in `backend-python/.env` |
+| Frontend (Live Server) | `5500` | `FRONTEND_URL` in both `.env` files |

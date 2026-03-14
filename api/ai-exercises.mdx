@@ -1,0 +1,232 @@
+---
+title: "Exercises"
+description: "Generate personalized coding exercises for a plan day and accept coder code submissions."
+---
+
+The exercises system provides two endpoints: one to generate (or retrieve from cache) a coding exercise for a specific day of a learning plan, and one to record a coder's code submission for TL review.
+
+---
+
+## POST /generate-exercise
+
+**Tag:** Exercises
+
+Generates a coding exercise for a specific day of a coder's active plan. Exercises are cached by `(plan_id, day_number)` — if an exercise already exists for that slot, it is returned immediately without calling the AI.
+
+The exercise is adapted to the coder's learning style, autonomy score, and problem-solving level. The programming language is auto-detected from the module name if not explicitly provided.
+
+### Request Body
+
+<ParamField body="coder_id" type="integer" required>
+  The coder's user ID. Used to look up their soft skill profile for personalization.
+</ParamField>
+
+<ParamField body="plan_id" type="integer" required>
+  The active learning plan ID from `complementary_plans`. Together with `day_number`, this is the cache key.
+</ParamField>
+
+<ParamField body="day_number" type="integer" required>
+  The day number within the plan (1–20 for a 4-week, 5-day/week plan).
+</ParamField>
+
+<ParamField body="week_number" type="integer" required>
+  The week number within the plan (1–4). Used to contextualize the exercise.
+</ParamField>
+
+<ParamField body="topic" type="string" required>
+  The technical topic for the exercise, typically the `technical_activity.title` from the plan day.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Additional description of the activity, typically the `technical_activity.description` from the plan day. Defaults to `""`.
+</ParamField>
+
+<ParamField body="difficulty" type="string">
+  Exercise difficulty level: `"beginner"`, `"intermediate"`, or `"advanced"`. Defaults to `"intermediate"`.
+</ParamField>
+
+<ParamField body="module_name" type="string">
+  The module name used for language auto-detection (e.g., `"Bases de Datos"` → `"sql"`, `"JavaScript"` → `"javascript"`). Defaults to `"Bases de Datos"`.
+</ParamField>
+
+<ParamField body="language" type="string">
+  Explicit language override: `"sql"`, `"python"`, `"javascript"`, or `"html"`. If not provided, the language is detected from `module_name`.
+</ParamField>
+
+### Language Auto-Detection
+
+When `language` is not provided, the service maps `module_name` to a language:
+
+| Module name keywords | Detected language |
+|----------------------|------------------|
+| `python` | `python` |
+| `html`, `html/css`, `css` | `html` |
+| `javascript`, `js` | `javascript` |
+| `base de datos`, `bases de datos`, `sql`, `database` | `sql` |
+| *(anything else)* | `sql` |
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:8000/generate-exercise \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 3,
+    "plan_id": 42,
+    "day_number": 1,
+    "week_number": 1,
+    "topic": "Mini-proyecto: calculadora de notas en Python",
+    "description": "Escribe una función que reciba una lista de scores y retorne el promedio, máximo y mínimo.",
+    "difficulty": "beginner",
+    "module_name": "Fundamentos de Python"
+  }'
+```
+
+### Response (generated)
+
+```json
+{
+  "success": true,
+  "exercise": {
+    "id": 17,
+    "title": "Calculadora de Notas — Promedio, Máximo y Mínimo",
+    "description": "Escribe la función `analyze_scores(scores)` que reciba una lista de números y retorne un diccionario con las claves 'average', 'max' y 'min'. Súbele el nivel: el input puede tener una lista vacía — maneja ese caso.",
+    "language": "python",
+    "difficulty": "beginner",
+    "topic": "Mini-proyecto: calculadora de notas en Python",
+    "starter_code": "def analyze_scores(scores: list) -> dict:\n    \"\"\"\n    Returns {'average': float, 'max': float, 'min': float}\n    Handle edge case: empty list.\n    \"\"\"\n    # Tu código aquí\n    pass\n",
+    "solution": "def analyze_scores(scores: list) -> dict:\n    if not scores:\n        return {'average': 0.0, 'max': 0.0, 'min': 0.0}\n    return {\n        'average': round(sum(scores) / len(scores), 2),\n        'max': max(scores),\n        'min': min(scores)\n    }\n",
+    "expected_output": "Para [80, 90, 70] debe retornar {'average': 80.0, 'max': 90, 'min': 70}. Para [] debe retornar {'average': 0.0, 'max': 0.0, 'min': 0.0}.",
+    "hints": [
+      "Recuerda que Python tiene las funciones built-in sum(), max() y min().",
+      "Antes de calcular, verifica si la lista está vacía con `if not scores`.",
+      "Para el promedio: divide la suma entre len(scores) y usa round() para 2 decimales."
+    ]
+  },
+  "cached": false
+}
+```
+
+### Response (cache hit)
+
+```json
+{
+  "success": true,
+  "exercise": {
+    "id": 17,
+    "title": "..."
+  },
+  "cached": true
+}
+```
+
+### Response Fields
+
+<ResponseField name="success" type="boolean">
+  `true` when the exercise was generated or retrieved successfully. `false` when a fallback exercise was returned due to an AI or parse error.
+</ResponseField>
+
+<ResponseField name="exercise" type="object">
+  The exercise object.
+
+  <Expandable title="exercise properties">
+    <ResponseField name="id" type="integer">
+      The exercise ID from the `exercises` table. Only present on freshly generated exercises (not on fallbacks).
+    </ResponseField>
+    <ResponseField name="title" type="string">Concise, actionable exercise title.</ResponseField>
+    <ResponseField name="description" type="string">Full exercise prompt adapted to the coder's learning style.</ResponseField>
+    <ResponseField name="language" type="string">Programming language: `"sql"`, `"python"`, `"javascript"`, or `"html"`.</ResponseField>
+    <ResponseField name="difficulty" type="string">Difficulty level: `"beginner"`, `"intermediate"`, or `"advanced"`.</ResponseField>
+    <ResponseField name="topic" type="string">The technical topic this exercise covers.</ResponseField>
+    <ResponseField name="starter_code" type="string">Runnable starter code the coder modifies. Self-contained — includes any necessary schema or function signatures.</ResponseField>
+    <ResponseField name="solution" type="string">The complete correct solution.</ResponseField>
+    <ResponseField name="expected_output" type="string">Textual description of the correct result.</ResponseField>
+    <ResponseField name="hints" type="string[]">
+      Progressive hints. The number of hints adapts to the coder's autonomy score: 3 hints for autonomy ≤ 2, 2 for autonomy = 3, 1 for autonomy ≥ 4.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Only present on fallback responses. Value: `"fallback"`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="cached" type="boolean">
+  `true` if the exercise was retrieved from the database cache; `false` if it was freshly generated.
+</ResponseField>
+
+### Fallback Behavior
+
+If the Groq API call fails or returns unparseable JSON, the service returns a safe fallback exercise (`success: false`) with language-appropriate starter code and `status: "fallback"`. The fallback is **not** cached.
+
+### Side Effects (new generation only)
+
+- Exercise is saved to the `exercises` table using upsert on `(plan_id, day_number)`.
+- A generation log entry is written to `ai_generation_log` with `agent_type = "exercise_generator"`.
+
+### Errors
+
+This endpoint does not raise HTTP errors for AI failures — it returns a fallback exercise with `success: false` instead. Only unexpected infrastructure failures would result in a 5xx response.
+
+---
+
+## POST /exercise/{exercise_id}/submit
+
+**Tag:** Exercises
+
+Saves a coder's code submission for a specific exercise. There is no automated grading — the TL reviews submissions manually.
+
+### Path Parameters
+
+<ParamField path="exercise_id" type="integer" required>
+  The exercise ID from the `exercises` table.
+</ParamField>
+
+### Request Body
+
+<ParamField body="coder_id" type="integer" required>
+  The coder's user ID.
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  The coder's submitted code. Cannot be empty or whitespace-only.
+</ParamField>
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:8000/exercise/17/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 3,
+    "code": "def analyze_scores(scores):\n    if not scores:\n        return {\'average\': 0.0, \'max\': 0.0, \'min\': 0.0}\n    return {\'average\': round(sum(scores)/len(scores), 2), \'max\': max(scores), \'min\': min(scores)}"
+  }'
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "submission_id": 5
+}
+```
+
+### Response Fields
+
+<ResponseField name="success" type="boolean">
+  `true` on successful submission.
+</ResponseField>
+
+<ResponseField name="submission_id" type="integer">
+  The ID of the new record in the `exercise_submissions` table.
+</ResponseField>
+
+### Errors
+
+| Status | Condition |
+|--------|-----------|
+| `400` | `coder_id` is missing or `code` is empty/whitespace |
+
+```json
+{ "detail": "coder_id y code son requeridos." }
+```

@@ -1,0 +1,174 @@
+---
+title: "Generate Focus Cards"
+description: "Generate 6 personalized study cards distributed as 2 High / 2 Medium / 2 Low priority."
+---
+
+## Endpoint
+
+```
+POST /generate-focus-cards
+```
+
+**Tag:** Focus Cards
+
+Generates exactly 6 smart study cards tailored to the coder's soft skill profile and their current struggling topics. Cards are distributed as 2 High / 2 Medium / 2 Low priority, matching the `priority_level_enum` values stored in `complementary_plans`.
+
+This endpoint is called by the Node.js gateway — not directly by the frontend.
+
+## Request Body
+
+<ParamField body="coder_id" type="integer" required>
+  The coder's user ID. Used to look up their `learning_style`, `problem_solving`, and `autonomy` scores from `soft_skills_assessment`.
+</ParamField>
+
+<ParamField body="module_id" type="integer" required>
+  The module ID the coder is currently studying. Passed to the AI as context.
+</ParamField>
+
+<ParamField body="struggling_topics" type="string[]">
+  List of topic names the coder is struggling with. If empty, defaults to `"general programming concepts"`. Defaults to `[]`.
+</ParamField>
+
+## Request Example
+
+```bash
+curl -X POST http://localhost:8000/generate-focus-cards \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 3,
+    "module_id": 4,
+    "struggling_topics": ["JOINs", "índices", "transacciones"]
+  }'
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "cards": [
+      {
+        "priority": "high",
+        "topic": "JOINs",
+        "title": "Dominando INNER JOIN y LEFT JOIN",
+        "theory": "Un JOIN combina filas de dos o más tablas basándose en una columna relacionada. INNER JOIN retorna solo las filas con coincidencias en ambas tablas. LEFT JOIN retorna todas las filas de la tabla izquierda, con NULL donde no haya coincidencia en la derecha.",
+        "practice": {
+          "description": "Escribe una consulta que muestre todos los coders con su progreso académico, incluyendo coders sin progreso registrado.",
+          "example": "SELECT u.full_name, mp.average_score\nFROM users u\nLEFT JOIN moodle_progress mp ON u.id = mp.coder_id\nWHERE u.role = 'coder';"
+        },
+        "pro_tips": [
+          "Siempre escribe el JOIN antes del WHERE para no confundir el filtro con la condición de unión.",
+          "Usa aliases cortos (u, mp) para queries largas — tu yo del futuro te lo agradecerá."
+        ]
+      },
+      {
+        "priority": "high",
+        "topic": "índices",
+        "title": "Cuándo y cómo usar índices en PostgreSQL",
+        "theory": "...",
+        "practice": { "description": "...", "example": "..." },
+        "pro_tips": ["..."]
+      },
+      {
+        "priority": "medium",
+        "topic": "transacciones",
+        "title": "...",
+        "theory": "...",
+        "practice": { "description": "...", "example": "..." },
+        "pro_tips": ["..."]
+      },
+      {
+        "priority": "medium",
+        "topic": "subqueries",
+        "title": "...",
+        "theory": "...",
+        "practice": { "description": "...", "example": "..." },
+        "pro_tips": ["..."]
+      },
+      {
+        "priority": "low",
+        "topic": "vistas",
+        "title": "...",
+        "theory": "...",
+        "practice": { "description": "...", "example": "..." },
+        "pro_tips": ["..."]
+      },
+      {
+        "priority": "low",
+        "topic": "funciones de ventana",
+        "title": "...",
+        "theory": "...",
+        "practice": { "description": "...", "example": "..." },
+        "pro_tips": ["..."]
+      }
+    ]
+  }
+}
+```
+
+## Response Fields
+
+<ResponseField name="success" type="boolean">
+  `true` on successful generation.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Wrapper object containing the cards array.
+
+  <Expandable title="data properties">
+    <ResponseField name="cards" type="object[]">
+      Array of exactly 6 card objects (2 high, 2 medium, 2 low priority).
+
+      <Expandable title="card properties">
+        <ResponseField name="priority" type="string">
+          Card importance level: `"high"`, `"medium"`, or `"low"`.
+        </ResponseField>
+        <ResponseField name="topic" type="string">
+          The technical topic this card covers.
+        </ResponseField>
+        <ResponseField name="title" type="string">
+          A concise, actionable card title.
+        </ResponseField>
+        <ResponseField name="theory" type="string">
+          A 3–4 sentence explanation of the concept.
+        </ResponseField>
+        <ResponseField name="practice" type="object">
+          Practical exercise for the card.
+          <Expandable title="practice properties">
+            <ResponseField name="description" type="string">What the coder should do.</ResponseField>
+            <ResponseField name="example" type="string">A code snippet or step-by-step guide.</ResponseField>
+          </Expandable>
+        </ResponseField>
+        <ResponseField name="pro_tips" type="string[]">
+          Array of 2 professional tips related to the topic.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## AI Personalization
+
+The AI receives the coder's soft skill profile from `soft_skills_assessment`:
+
+- **`learning_style`** — shapes how the theory and practice sections are written
+- **`problem_solving`** (1–5) — influences the depth of examples
+- **`autonomy`** (1–5) — influences how guided the practice descriptions are
+
+If no soft skills record exists for the coder, the AI falls back to defaults (`learning_style: "mixed"`, scores: `3/5`).
+
+## Errors
+
+| Status | Condition |
+|--------|-----------|
+| `500` | AI returned text that could not be parsed as valid JSON |
+| `500` | Any other upstream error (Groq API timeout, Supabase connection failure, etc.) |
+
+```json
+{ "detail": "AI returned invalid JSON" }
+```
+
+<Warning>
+  The service logs a warning if the AI returns fewer or more than 6 cards, but does not raise an error — it returns whatever the AI produced. Callers should validate `data.cards.length === 6` defensively.
+</Warning>

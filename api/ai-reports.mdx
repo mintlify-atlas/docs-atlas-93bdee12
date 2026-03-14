@@ -1,0 +1,198 @@
+---
+title: "Generate AI Report"
+description: "Generate an AI-powered analytical performance report for a clan and optionally export it as a PDF."
+---
+
+This section covers two endpoints: the AI report generator (`POST /generate-report`) that writes to the `ai_reports` table, and the PDF exporter (`GET /generate-pdf/{clan}`) that streams a formatted PDF file.
+
+---
+
+## POST /generate-report
+
+**Tag:** TL Reports
+
+Generates an AI analytical report for a clan. The report is saved to the `ai_reports` table with `target_type = 'clan'` and is visible to Team Leaders on their dashboard.
+
+The report contains three sections: current state summary, main risks, and concrete recommendations.
+
+### Request Body
+
+<ParamField body="clan" type="string" required>
+  The clan name (e.g., `"Turing"`, `"Tesla"`, `"McCarthy"`). Used as the report title and stored in `ai_reports.clan_id`.
+</ParamField>
+
+<ParamField body="tl_id" type="integer" required>
+  The Team Leader's user ID. Stored in `ai_reports.target_id`.
+</ParamField>
+
+<ParamField body="total_coders" type="integer" required>
+  Total number of coders in the clan.
+</ParamField>
+
+<ParamField body="average_score" type="number" required>
+  Average academic score across all coders in the clan (0–100).
+</ParamField>
+
+<ParamField body="high_risk_count" type="integer" required>
+  Number of coders currently flagged as high or critical risk.
+</ParamField>
+
+<ParamField body="top_struggling_topics" type="string[]">
+  List of the most common struggling topics in the clan. Defaults to `[]`.
+</ParamField>
+
+<ParamField body="soft_skills_summary" type="object">
+  A dictionary of average soft skill scores for the clan (e.g., `{"autonomy": 3.2, "problem_solving": 2.8}`). Defaults to `{}`.
+</ParamField>
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:8000/generate-report \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clan": "Turing",
+    "tl_id": 1,
+    "total_coders": 8,
+    "average_score": 71.5,
+    "high_risk_count": 2,
+    "top_struggling_topics": ["JOINs", "índices", "transacciones"],
+    "soft_skills_summary": {
+      "autonomy": 2.8,
+      "time_management": 3.1,
+      "problem_solving": 3.4,
+      "communication": 3.7,
+      "teamwork": 3.9
+    }
+  }'
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "report": {
+    "report_title": "Clan Turing — Performance Report",
+    "generated_date": "March 14, 2026",
+    "risk_level": "medium",
+    "summary": "Clan Turing shows a solid average score of 71.5/100, with most coders progressing steadily through the Bases de Datos module. However, 2 coders are flagged as high risk due to low autonomy scores combined with below-average academic performance.",
+    "risks": "The primary concern is the cluster of low autonomy scores (average 2.8/5), which correlates with the two high-risk coders. JOINs and índices are the most commonly struggled topics, suggesting a gap in relational thinking that could widen as the module advances.",
+    "recommendations": "Prioritize one-on-one sessions with the two high-risk coders this week. Introduce a structured pair-programming session focused on JOINs. Consider a 30-minute group workshop on database indexing before the end-of-module assessment.",
+    "action_items": [
+      "Schedule 1:1 with Juan Pérez and Luis González before Wednesday",
+      "Create a JOINs practice worksheet and share with the full clan",
+      "Run a 30-min group session: \"When and why to use indexes\"",
+      "Review and update risk flags for the two at-risk coders",
+      "Check in on all coders' plan completion percentage on Friday"
+    ]
+  }
+}
+```
+
+### Response Fields
+
+<ResponseField name="success" type="boolean">
+  `true` on successful generation.
+</ResponseField>
+
+<ResponseField name="report" type="object">
+  The AI-generated report object.
+
+  <Expandable title="report properties">
+    <ResponseField name="report_title" type="string">
+      Auto-generated title: `"Clan {clan} — Performance Report"`.
+    </ResponseField>
+    <ResponseField name="generated_date" type="string">
+      Human-readable generation date (e.g., `"March 14, 2026"`).
+    </ResponseField>
+    <ResponseField name="risk_level" type="string">
+      Overall clan risk assessment: `"low"`, `"medium"`, `"high"`, or `"critical"`.
+    </ResponseField>
+    <ResponseField name="summary" type="string">
+      A paragraph describing the clan's current academic state.
+    </ResponseField>
+    <ResponseField name="risks" type="string">
+      A paragraph identifying the main risks and concerns.
+    </ResponseField>
+    <ResponseField name="recommendations" type="string">
+      A paragraph with concrete actions the TL should take.
+    </ResponseField>
+    <ResponseField name="action_items" type="string[]">
+      Array of 3–5 specific, actionable items for the TL.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Side Effects
+
+- A record is inserted into `ai_reports` with `viewed_by_tl = false`.
+- A generation log entry is written to `ai_generation_log` with `agent_type = "report_generator"`.
+
+### Errors
+
+| Status | Condition |
+|--------|-----------|
+| `500` | AI returned text that could not be parsed as valid JSON |
+| `500` | Any other upstream error |
+
+---
+
+## GET /generate-pdf/{clan}
+
+**Tag:** TL Reports
+
+Generates and streams a PDF performance report for a clan. This endpoint does not call the AI — it builds the report from existing database records using `fpdf2` (pure Python, no system dependencies).
+
+### Path Parameters
+
+<ParamField path="clan" type="string" required>
+  The clan name to generate the PDF for (e.g., `"Turing"`).
+</ParamField>
+
+### Request Example
+
+```bash
+curl -X GET "http://localhost:8000/generate-pdf/Turing" \
+  --output clan_turing_report.pdf
+```
+
+### Response
+
+Returns a streaming `application/pdf` response.
+
+**Headers:**
+```
+Content-Type: application/pdf
+Content-Disposition: attachment; filename=clan_Turing_report.pdf
+```
+
+The PDF includes:
+- Clan header with generation date
+- Overview: total coders, average score, diagnostics completed
+- Per-coder profiles: name, email, average score, current week, soft skill scores, learning style
+
+### Errors
+
+| Status | Condition |
+|--------|-----------|
+| `404` | No coders found in the specified clan |
+| `500` | PDF generation error |
+
+```json
+{ "detail": "No coders found in clan 'Turing'" }
+```
+
+## report_target_enum
+
+The `ai_reports.target_type` column uses the `report_target_enum` type defined in the schema:
+
+| Value | Description |
+|-------|-------------|
+| `coder` | Report targeting an individual coder |
+| `clan` | Report targeting a clan (used by `POST /generate-report`) |
+| `cohort` | Report targeting an entire cohort |
+
+<Note>
+  `POST /generate-report` always writes `target_type = 'clan'`. The `coder` and `cohort` values are reserved for future report types.
+</Note>

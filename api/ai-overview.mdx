@@ -1,0 +1,131 @@
+---
+title: "AI Microservice Overview"
+description: "Kairo AI Engine v2.2 — Python/FastAPI microservice for personalized learning plans, focus cards, chat, reports, and exercises."
+---
+
+The **Kairo AI Engine** is a Python/FastAPI microservice (v2.2) that powers all AI-driven features of the Kairo learning platform. It communicates exclusively with the Node.js backend gateway in production — the frontend never calls it directly.
+
+**Base URL:** `http://localhost:8000`
+
+<Info>
+  In production, the Node.js gateway proxies all requests to this service. Set the `NODE_URL` and `FRONTEND_URL` environment variables to configure allowed CORS origins.
+</Info>
+
+## Capabilities
+
+<CardGroup cols={3}>
+  <Card title="Learning Plans" icon="map" href="/api/ai-generate-plan">
+    Generate interpretive and analytical personalized study plans tailored to each coder's soft skill profile.
+  </Card>
+  <Card title="Focus Cards" icon="cards" href="/api/ai-focus-cards">
+    Generate 6 prioritized study cards (2 High / 2 Medium / 2 Low) based on struggling topics.
+  </Card>
+  <Card title="AI Tutor Chat" icon="message-bot" href="/api/ai-chat">
+    Conversational AI tutor that answers programming questions concisely and practically.
+  </Card>
+  <Card title="Reports" icon="chart-bar" href="/api/ai-reports">
+    Generate analytical performance reports for Team Leaders covering clan health, risks, and recommendations.
+  </Card>
+  <Card title="Exercises" icon="code" href="/api/ai-exercises">
+    Generate and cache personalized coding exercises for each day of a learning plan, with coder submission support.
+  </Card>
+</CardGroup>
+
+## Endpoint Reference
+
+| Method | Path | Tag | Description |
+|--------|------|-----|-------------|
+| `POST` | `/generate-plan` | Learning Plans | Generate a personalized learning plan |
+| `POST` | `/generate-focus-cards` | Focus Cards | Generate 6 prioritized study cards |
+| `POST` | `/chat/ask` | AI Tutor | Ask the AI coding tutor a question |
+| `POST` | `/generate-report` | TL Reports | Generate an AI performance report for a clan |
+| `GET` | `/generate-pdf/{clan}` | TL Reports | Generate a PDF report for a clan |
+| `POST` | `/generate-exercise` | Exercises | Generate (or return cached) a coding exercise |
+| `POST` | `/exercise/{id}/submit` | Exercises | Submit a coder's code for an exercise |
+| `GET` | `/health` | Infrastructure | Service health check |
+| `GET` | `/` | Infrastructure | Service root info |
+
+## Health Check
+
+```bash
+curl http://localhost:8000/health
+```
+
+```json
+{
+  "status": "online",
+  "service": "Kairo AI Engine",
+  "model": "llama-3.3-70b-versatile",
+  "embeddings": "all-MiniLM-L6-v2",
+  "environment": "development"
+}
+```
+
+The `embeddings` field returns `"unavailable"` if the sentence-transformer model failed to load at startup.
+
+## Root Endpoint
+
+```bash
+curl http://localhost:8000/
+```
+
+```json
+{
+  "message": "Kairo AI Microservice",
+  "docs": "/docs",
+  "version": "2.2.0"
+}
+```
+
+Interactive API docs (Swagger UI) are available at `http://localhost:8000/docs`.
+
+## AI Model
+
+All generation endpoints use the **Groq inference API** with model `llama-3.3-70b-versatile` by default. The model can be overridden via the `MODEL_NAME` environment variable.
+
+Embeddings use `all-MiniLM-L6-v2` (384-dimensional vectors) loaded via the `sentence-transformers` library at startup.
+
+## CORS Configuration
+
+The service always allows the following origins:
+
+- `http://localhost:3000`
+- `http://localhost:5500`
+- `http://127.0.0.1:5500`
+
+Additionally, any valid HTTP URL set in the `NODE_URL` or `FRONTEND_URL` environment variables is added automatically at startup. Wildcard (`*`) values are ignored.
+
+Allowed methods: `GET`, `POST`, `DELETE`, `OPTIONS`  
+Allowed headers: `Content-Type`, `Authorization`
+
+## Architecture
+
+```
+Frontend (Next.js)
+    │
+    ▼
+Node.js Gateway (Express)
+    │
+    ├─ POST /api/plan/generate  ──▶  POST /generate-plan
+    ├─ POST /api/cards          ──▶  POST /generate-focus-cards
+    ├─ POST /api/chat           ──▶  POST /chat/ask
+    ├─ POST /api/report         ──▶  POST /generate-report
+    └─ POST /api/exercise       ──▶  POST /generate-exercise
+                                          │
+                                    Kairo AI Engine
+                                    (FastAPI / Groq)
+                                          │
+                                    Supabase (PostgreSQL)
+```
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GROQ_API_KEY` | Yes | Groq API key for LLM inference |
+| `SUPABASE_URL` | Yes | Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | Yes | Supabase service role key (bypasses RLS) |
+| `MODEL_NAME` | No | LLM model override (default: `llama-3.3-70b-versatile`) |
+| `NODE_URL` | No | Node.js gateway origin to add to CORS allowlist |
+| `FRONTEND_URL` | No | Frontend origin to add to CORS allowlist |
+| `ENV` | No | Environment label shown in health check (default: `development`) |

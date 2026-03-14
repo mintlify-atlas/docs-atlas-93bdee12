@@ -1,0 +1,95 @@
+---
+title: 'Coder onboarding'
+description: 'The one-time diagnostic assessment that builds your learning profile and triggers your first personalized plan.'
+keywords: ['onboarding', 'diagnostic', 'soft skills', 'learning style', 'VARK', 'Felder-Soloman', 'Kolb']
+---
+
+# Coder onboarding
+
+Onboarding is the first thing you do after registering on Kairo. It runs exactly once — the platform checks the `first_login` flag on your user record and redirects you to the diagnostic before you can access the dashboard.
+
+The diagnostic is a 30-question adaptive questionnaire built on three internationally recognised frameworks: **VARK**, **Felder-Soloman ILS**, and **Kolb's experiential learning model**. Your answers are never scored manually — all computation happens server-side in the Node.js backend after you submit.
+
+<Tip>
+  Answer with your first instinct. The diagnostic is most accurate when you reflect your actual habits, not how you think a good student should answer. Kairo adapts to your real skill level — not an idealised one.
+</Tip>
+
+## Onboarding flow
+
+<Steps>
+  <Step title="Register">
+    Create your Kairo account with email and password. Your `first_login` field is set to `true` at this point.
+  </Step>
+  <Step title="Complete the diagnostic">
+    Answer 30 questions across 7 learning-dimension blocks. The questionnaire takes 5–8 minutes. You can go back and change answers before submitting.
+
+    | Block | Dimension | What it measures |
+    |-------|-----------|------------------|
+    | B1 | Sensory channels | Whether you learn best visually, aurally, by reading, or by doing |
+    | B2 | Active vs. reflective | Whether you act first or think before acting |
+    | B3 | Concrete vs. intuitive | Whether you prefer real examples or abstract ideas |
+    | B4 | Sequential vs. global | Whether you need step-by-step structure or the big picture first |
+    | B5 | Visual vs. verbal | Whether diagrams or written descriptions work better for you |
+    | B6 | Experiential cycle | How you process new information: experiencing, observing, analysing, or experimenting |
+    | B7 | Integrative profile | Cross-cutting questions that complete your full learning profile |
+  </Step>
+  <Step title="Scores are derived server-side">
+    After submission, the Node.js controller tallies your answer tags (VARK: `V`, `A`, `R`, `K`; ILS: `ACT`, `REF`, `SNS`, `INT`, `VIS`, `VRB`, `SEQ`, `GLO`; Kolb: `CE`, `RO`, `AC`, `AE`) and derives both your learning style and your five soft skill scores. Your raw answers are never touched by the frontend.
+  </Step>
+  <Step title="Results saved to the database">
+    A row is inserted into the `soft_skills_assessment` table containing your profile scores and your raw answers for audit purposes.
+  </Step>
+  <Step title="AI generates your first plan">
+    Immediately after saving the diagnostic, Kairo fires a background request to the Python microservice to generate your first **interpretive** learning plan. You are redirected to the dashboard right away — the plan appears once it is ready, usually within a few seconds.
+  </Step>
+</Steps>
+
+## Soft skills dimensions
+
+Your diagnostic produces a score from 1 to 5 for each of the following dimensions. These scores feed directly into every AI-generated plan and focus card set you receive.
+
+| Dimension | Score range | Derived from |
+|-----------|-------------|------------------|
+| `autonomy` | 1–5 | REF (reflective) + AC (abstract conceptualisation) + RO (reflective observation) |
+| `time_management` | 1–5 | SEQ (sequential) + AE (active experimentation) + SNS (sensing) |
+| `problem_solving` | 1–5 | GLO (global) + AC (abstract conceptualisation) + INT (intuitive) |
+| `communication` | 1–5 | ACT (active) + CE (concrete experience) + VRB (verbal) |
+| `teamwork` | 1–5 | ACT (active) + CE (concrete experience) + SNS (sensing) |
+
+## Learning style
+
+Alongside your soft skill scores, the diagnostic identifies your dominant **learning style**, stored in the `learning_style` column of the `soft_skills_assessment` table.
+
+| Value | Description |
+|-------|-------------|
+| `visual` | You learn best through diagrams, code structure, and spatial layout |
+| `auditory` | You learn best through verbal explanation and discussion |
+| `kinesthetic` | You learn best by building, experimenting, and getting hands-on |
+| `mixed` | No single style dominates — Kairo blends approaches for you |
+
+A learning style is assigned as dominant only if it accounts for at least 35 % of your combined VARK and ILS answer tags. Otherwise you receive `mixed`.
+
+## Database storage
+
+Results are stored in the `soft_skills_assessment` table:
+
+```sql
+CREATE TABLE soft_skills_assessment (
+  id               SERIAL PRIMARY KEY,
+  coder_id         INT NOT NULL UNIQUE,
+  autonomy         INT NOT NULL CHECK (autonomy BETWEEN 1 AND 5),
+  time_management  INT NOT NULL CHECK (time_management BETWEEN 1 AND 5),
+  problem_solving  INT NOT NULL CHECK (problem_solving BETWEEN 1 AND 5),
+  communication    INT NOT NULL CHECK (communication BETWEEN 1 AND 5),
+  teamwork         INT NOT NULL CHECK (teamwork BETWEEN 1 AND 5),
+  learning_style   learning_style_enum NOT NULL,
+  raw_answers      JSONB,
+  assessed_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+The `raw_answers` column stores the full array of `{ questionId, optionId, score }` objects as JSONB. This data is never surfaced in the UI but is available for audit and reprocessing if the scoring algorithm is updated.
+
+<Note>
+  The `coder_id` column has a `UNIQUE` constraint — only one assessment per coder is stored. Re-running the diagnostic from profile settings overwrites the existing row.
+</Note>

@@ -1,0 +1,200 @@
+---
+title: "Migrations"
+description: "Versioned schema changes, seed data, and the recommended workflow for applying them."
+---
+
+<Warning>
+  Always apply migrations in numerical order. Each migration may depend on schema changes introduced by a previous one. Running them out of order can cause constraint violations or missing column errors.
+</Warning>
+
+## Applying Migrations
+
+<Steps>
+  <Step title="Apply the base schema">
+    Run `schema.sql` first. This creates all 14 core tables, enum types, indexes, and views from scratch.
+
+    ```bash
+    # Via psql
+    psql -U your_user -d your_db -f schema.sql
+    ```
+
+    Or paste the contents into the Supabase **SQL Editor** and execute.
+  </Step>
+
+  <Step title="Enable Row Level Security">
+    Run `rls_policies.sql` to activate RLS and create all access policies.
+
+    ```bash
+    psql -U your_user -d your_db -f rls_policies.sql
+    ```
+
+    <Note>
+      The Python AI microservice uses the service role key which bypasses RLS. Only apply RLS after confirming the AI service is configured with `SUPABASE_SERVICE_KEY`.
+    </Note>
+  </Step>
+
+  <Step title="Apply migrations in order">
+    Run each migration file in numerical order:
+
+    ```bash
+    psql -U your_user -d your_db -f migrations/001_add_clans_and_priority_and_notifications.sql
+    psql -U your_user -d your_db -f migrations/002_add_raw_answers_to_soft_skills.sql
+    psql -U your_user -d your_db -f migrations/005_create_user_profiles.sql
+    ```
+
+    All migration statements use `IF NOT EXISTS` / `IF EXISTS` guards so they are safe to re-run.
+  </Step>
+
+  <Step title="Seed test data (development only)">
+    Load sample users, modules, topics, and progress records:
+
+    ```bash
+    psql -U your_user -d your_db -f seeds/users.sql
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Migration Files
+
+### 001 — Add Clans, Priority Level, and Notifications
+
+**File:** `migrations/001_add_clans_and_priority_and_notifications.sql`  
+**Date:** March 2026
+
+Enables three core platform features that were not in the original schema:
+
+**Changes:**
+
+1. **`users.clan_id`** — Adds a `VARCHAR(50)` column to `users` to assign coders to a named clan (`'Turing'`, `'Tesla'`, `'McCarthy'`). Creates `idx_users_clan_id` for fast TL clan filtering.
+
+2. **`priority_level_enum`** and **`complementary_plans.priority_level`** — Creates the `priority_level_enum` type (`'low'`, `'medium'`, `'high'`) and adds the `priority_level` column to `complementary_plans`. This powers the 2 High / 2 Medium / 2 Low card distribution. Creates `idx_complementary_plans_priority`.
+
+3. **`tl_feedback.is_read`** — Adds a `BOOLEAN DEFAULT FALSE` column to `tl_feedback`. When `false`, the frontend shows a red notification dot on the bell icon. Creates `idx_tl_feedback_is_read` and a composite `idx_tl_feedback_coder_unread` index.
+
+```sql
+-- All changes use IF NOT EXISTS guards — safe to re-run
+ALTER TABLE users ADD COLUMN IF NOT EXISTS clan_id VARCHAR(50);
+ALTER TABLE complementary_plans ADD COLUMN IF NOT EXISTS priority_level priority_level_enum DEFAULT 'medium';
+ALTER TABLE tl_feedback ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;
+```
+
+---
+
+### 002 — Add raw_answers to soft_skills_assessment
+
+**File:** `migrations/002_add_raw_answers_to_soft_skills.sql`
+
+**Bug fix:** The Node.js `softSkills.js` model was inserting a `raw_answers` JSONB payload into `soft_skills_assessment`, but the column did not exist in the original schema. This caused `INSERT` failures during onboarding.
+
+**Changes:**
+
+- Adds `raw_answers JSONB` to `soft_skills_assessment`. Stores the full onboarding answers array `[{questionId, optionId, score}]` for audit and re-processing purposes.
+
+```sql
+ALTER TABLE soft_skills_assessment
+  ADD COLUMN IF NOT EXISTS raw_answers JSONB;
+```
+
+---
+
+### 005 — Create user_profiles
+
+**File:** `migrations/005_create_user_profiles.sql`
+
+**Purpose:** Adds a supplementary profile table to store structured personal and social data for users. Separation from `users` keeps the core auth table lean.
+
+**Changes:**
+
+- Creates `user_profiles` table with columns: `user_id` (PK, FK → users), `phone`, `location`, `birth_date`, `bio`, `github_url`, `linkedin_url`, `twitter_url`, `portfolio_url`, `updated_at`.
+- Creates `idx_user_profiles_user_id` index.
+
+```sql
+CREATE TABLE IF NOT EXISTS user_profiles (
+  user_id       INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  phone         VARCHAR(20),
+  location      VARCHAR(100),
+  birth_date    DATE,
+  bio           TEXT,
+  github_url    TEXT,
+  linkedin_url  TEXT,
+  twitter_url   TEXT,
+  portfolio_url TEXT,
+  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+<Note>
+  Migration `005` is numbered non-sequentially (skipping 003 and 004). This is intentional — those numbers were reserved for migrations that were implemented directly in the base schema.
+</Note>
+
+---
+
+## Seed Files
+
+### users.sql
+
+**File:** `seeds/users.sql`  
+**Environment:** Development and testing only
+
+Inserts a representative set of users and related data wrapped in a single `BEGIN` / `COMMIT` transaction:
+
+| Section | What it inserts |
+|---------|-----------------|
+| `users` | 2 Team Leaders (`María García`, `Carlos Rodríguez`) + 6 Coders across 3 clans |
+| `soft_skills_assessment` | Diagnostic results for all 6 coders with varied profiles (risk to excellent) |
+| `modules` | 6 bootcamp modules: Python, HTML/CSS, JavaScript, Bases de Datos, Node.js, React |
+| `topics` | 12 topics across the first 3 modules (4 per module) |
+| `moodle_progress` | Academic progress records for coders at different stages |
+| `coder_struggling_topics` | Struggle mappings for 3 coders (Juan, Pedro, Luis) |
+
+**Clan distribution:**
+
+| Clan | Coders |
+|------|--------|
+| Turing | Juan Pérez, Ana López |
+| Tesla | Pedro Martínez, Sofía Hernández |
+| McCarthy | Luis González, María Sánchez |
+
+**Test scenarios covered:**
+
+| Coder | Profile | Purpose |
+|-------|---------|--------|
+| Juan | autonomy=2, score=65.5 | Automatic risk detection |
+| Ana | autonomy=4, score=88.0 | Normal / healthy case |
+| Pedro | time_management=2, score=72.0 | Specific skill alert |
+| Sofía | all scores=5, score=95.0 | High-performer case |
+| Luis | autonomy=2, problem_solving=2, score=58.0 | High-risk case |
+| María S. | balanced 3–4, score not seeded | Baseline coder |
+
+To load the seed file:
+
+```bash
+# Via psql
+psql -U your_user -d your_db -f seeds/users.sql
+
+# Via Supabase SQL Editor
+# Copy contents of seeds/users.sql and execute
+```
+
+To verify the seed loaded correctly:
+
+```sql
+SELECT COUNT(*) FROM users;                   -- Expected: 8
+SELECT COUNT(*) FROM modules;                 -- Expected: 6
+SELECT COUNT(*) FROM soft_skills_assessment;  -- Expected: 6
+```
+
+### Resetting Seed Data
+
+```sql
+-- Reset users (cascades to all related tables)
+TRUNCATE TABLE users RESTART IDENTITY CASCADE;
+
+-- Then re-run the seed
+```
+
+<Warning>
+  Never run seed files in a production environment. Seed passwords are plaintext strings (`'hashed_password_here'`). In production, all passwords must be properly hashed with bcrypt before insertion.
+</Warning>

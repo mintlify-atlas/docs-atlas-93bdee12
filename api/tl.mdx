@@ -1,0 +1,282 @@
+---
+title: "Team Leader API"
+description: "Endpoints available to authenticated Team Leaders: dashboard data, coder oversight, feedback submission, and resource management."
+---
+
+## Overview
+
+All TL endpoints require:
+
+1. **An active session** — the `riwi.sid` cookie set by login.
+2. **Role `tl`** — requests from `coder` accounts receive `403 Forbidden`.
+
+**Base URL:** `http://localhost:3000`
+
+All endpoints are mounted under `/api/tl`.
+
+---
+
+## Dashboard
+
+### GET /api/tl/dashboard
+
+Returns a complete snapshot of the TL's clan: all coders with their Moodle progress, soft-skills assessments, risk levels, clan-wide averages, and overview statistics.
+
+```bash
+curl http://localhost:3000/api/tl/dashboard \
+  -b cookies.txt
+```
+
+**Response**
+
+<ResponseField name="tl" type="object">
+  Basic TL identity.
+  <Expandable title="tl fields">
+    <ResponseField name="tl.fullName" type="string">Team Leader's display name.</ResponseField>
+    <ResponseField name="tl.clanId" type="number">The clan this TL manages.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="coders" type="array">
+  All coders in the TL's clan. Each coder includes Moodle progress, soft-skills scores, and the latest unresolved risk level.
+  <Expandable title="coder fields">
+    <ResponseField name="id" type="number">Coder user ID.</ResponseField>
+    <ResponseField name="full_name" type="string">Display name.</ResponseField>
+    <ResponseField name="email" type="string">Email address.</ResponseField>
+    <ResponseField name="first_login" type="boolean">`true` if onboarding is still pending.</ResponseField>
+    <ResponseField name="clan_id" type="number">Clan ID.</ResponseField>
+    <ResponseField name="average_score" type="number | null">Moodle average score.</ResponseField>
+    <ResponseField name="current_week" type="number | null">Current module week.</ResponseField>
+    <ResponseField name="autonomy" type="number | null">Soft skill score (1–5).</ResponseField>
+    <ResponseField name="time_management" type="number | null">Soft skill score (1–5).</ResponseField>
+    <ResponseField name="problem_solving" type="number | null">Soft skill score (1–5).</ResponseField>
+    <ResponseField name="communication" type="number | null">Soft skill score (1–5).</ResponseField>
+    <ResponseField name="teamwork" type="number | null">Soft skill score (1–5).</ResponseField>
+    <ResponseField name="learning_style" type="string | null">Detected learning style.</ResponseField>
+    <ResponseField name="risk_level" type="string | null">`medium`, `high`, `critical`, or `null`.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="overview" type="object">
+  Aggregated clan statistics.
+  <Expandable title="overview fields">
+    <ResponseField name="totalCoders" type="number">Total coders in the clan.</ResponseField>
+    <ResponseField name="completedOnboarding" type="number">Coders who finished onboarding.</ResponseField>
+    <ResponseField name="pendingOnboarding" type="number">Coders still on first login.</ResponseField>
+    <ResponseField name="highRiskCoders" type="number">Coders flagged as `high` or `critical` risk.</ResponseField>
+    <ResponseField name="clanAvgScore" type="string">Clan-wide Moodle average (formatted to 1 decimal).</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="softSkillsAverage" type="object">
+  Clan averages across the five soft-skill dimensions (only coders who completed the assessment are included).
+  <Expandable title="softSkillsAverage fields">
+    <ResponseField name="autonomy" type="number">Clan average.</ResponseField>
+    <ResponseField name="time_management" type="number">Clan average.</ResponseField>
+    <ResponseField name="problem_solving" type="number">Clan average.</ResponseField>
+    <ResponseField name="communication" type="number">Clan average.</ResponseField>
+    <ResponseField name="teamwork" type="number">Clan average.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json 200
+{
+  "tl": { "fullName": "Carlos Méndez", "clanId": 3 },
+  "coders": [
+    {
+      "id": 42,
+      "full_name": "Ana Torres",
+      "email": "ana@riwi.io",
+      "first_login": false,
+      "clan_id": 3,
+      "average_score": 78.5,
+      "current_week": 3,
+      "autonomy": 4,
+      "time_management": 3,
+      "problem_solving": 5,
+      "communication": 4,
+      "teamwork": 4,
+      "learning_style": "visual",
+      "risk_level": null
+    }
+  ],
+  "overview": {
+    "totalCoders": 12,
+    "completedOnboarding": 10,
+    "pendingOnboarding": 2,
+    "highRiskCoders": 1,
+    "clanAvgScore": "75.3"
+  },
+  "softSkillsAverage": {
+    "autonomy": 3.8,
+    "time_management": 3.5,
+    "problem_solving": 4.1,
+    "communication": 3.9,
+    "teamwork": 4.0
+  }
+}
+```
+
+---
+
+## Feedback
+
+### POST /api/tl/feedback
+
+Submits written feedback on a coder. Stores the feedback in the database and dispatches a real-time notification to the coder via SSE.
+
+```bash
+curl -X POST http://localhost:3000/api/tl/feedback \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "coderId": 42,
+    "feedbackText": "Excelente trabajo en los ejercicios de esta semana.",
+    "feedbackType": "positive"
+  }'
+```
+
+**Request body**
+
+<ParamField body="coderId" type="number" required>
+  User ID of the coder receiving the feedback.
+</ParamField>
+
+<ParamField body="feedbackText" type="string" required>
+  The feedback message body. Input is sanitized server-side.
+</ParamField>
+
+<ParamField body="feedbackType" type="string" required>
+  Category of feedback (e.g. `positive`, `improvement`, `warning`). Input is sanitized server-side.
+</ParamField>
+
+**Response**
+
+<ResponseField name="success" type="boolean">`true` on successful creation.</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+<ResponseField name="data" type="object">The created `tl_feedback` database record.</ResponseField>
+
+```json 201
+{
+  "success": true,
+  "message": "Feedback registered",
+  "data": {
+    "id": 77,
+    "coder_id": 42,
+    "tl_id": 5,
+    "feedback_text": "Excelente trabajo en los ejercicios de esta semana.",
+    "feedback_type": "positive",
+    "created_at": "2025-11-10T14:30:00Z"
+  }
+}
+```
+
+```json 400
+{ "error": "All fields are required" }
+```
+
+---
+
+## Resources
+
+### POST /api/tl/resource/upload
+
+Uploads a PDF resource to Supabase Storage and registers it in the database. All active coders in the TL's clan receive a real-time notification. Accepted file type: `application/pdf`. Maximum file size: **20 MB**.
+
+```bash
+curl -X POST http://localhost:3000/api/tl/resource/upload \
+  -b cookies.txt \
+  -F "file=@guide.pdf" \
+  -F "title=Week 3 Study Guide" \
+  -F "moduleId=4"
+```
+
+**Request body** (`multipart/form-data`)
+
+<ParamField body="file" type="file" required>
+  PDF file to upload. Only `application/pdf` is accepted.
+</ParamField>
+
+<ParamField body="title" type="string" required>
+  Human-readable title for the resource.
+</ParamField>
+
+<ParamField body="moduleId" type="number">
+  Module to associate the resource with.
+</ParamField>
+
+```json 200
+{
+  "success": true,
+  "message": "PDF subido correctamente.",
+  "storagePath": "clan3/module-4/1699999999999_guide.pdf"
+}
+```
+
+```json 400
+{ "error": "No se recibió ningún archivo." }
+```
+
+```json 400
+{ "error": "Solo se aceptan archivos PDF." }
+```
+
+---
+
+### GET /api/tl/resource/list
+
+Lists all active resources uploaded by the TL's clan. Optionally filtered by module.
+
+**Query parameters**
+
+<ParamField query="moduleId" type="number">
+  Filter by module ID.
+</ParamField>
+
+<ResponseField name="resources" type="array">
+  <Expandable title="resource fields">
+    <ResponseField name="id" type="number">Resource ID.</ResponseField>
+    <ResponseField name="title" type="string">Resource title.</ResponseField>
+    <ResponseField name="file_name" type="string">Original filename.</ResponseField>
+    <ResponseField name="preview_text" type="string">Text preview extracted from the PDF.</ResponseField>
+    <ResponseField name="uploaded_at" type="string">Upload timestamp.</ResponseField>
+    <ResponseField name="module_id" type="number">Associated module.</ResponseField>
+    <ResponseField name="clan" type="number">Clan ID.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json 200
+{
+  "resources": [
+    {
+      "id": 14,
+      "title": "Week 3 Study Guide",
+      "file_name": "guide.pdf",
+      "preview_text": "Introduction to SQL...",
+      "uploaded_at": "2025-11-01T10:00:00Z",
+      "module_id": 4,
+      "clan": 3
+    }
+  ]
+}
+```
+
+---
+
+### DELETE /api/tl/resource/:resourceId
+
+Soft-deletes a resource (sets `is_active = false`) and removes the file from Supabase Storage. Only the TL who uploaded the resource within their own clan can delete it.
+
+**Path parameter**
+
+<ParamField path="resourceId" type="number" required>
+  ID of the resource to delete.
+</ParamField>
+
+```json 200
+{ "success": true }
+```
+
+```json 404
+{ "error": "Recurso no encontrado o no autorizado." }
+```

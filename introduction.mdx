@@ -1,0 +1,52 @@
+---
+title: 'Introduction'
+description: "Kairo is an AI-powered personalized learning platform built for Riwi's intensive 11-month coding bootcamp."
+keywords: ['kairo', 'riwi', 'learning platform', 'ai', 'bootcamp', 'personalized learning']
+---
+
+# Introduction
+
+Kairo is the intelligent backbone of Riwi's intensive 11-month coding bootcamp. It bridges the gap between a fast-paced curriculum and each learner's individual pace by transforming academic performance data and soft skills assessments into dynamic, personalized 4-week growth paths.
+
+At its core, Kairo is a distributed system: a Node.js orchestrator handles all business logic, authentication, and user management, while a Python/FastAPI microservice runs local LLM inference and generates AI-powered content. These two engines work in concert to ensure no Coder is left behind.
+
+## User roles
+
+Kairo serves two distinct user roles:
+
+- **Coder** — A student enrolled in Riwi's bootcamp. Coders receive adaptive learning plans, focus cards, and access to an AI trainer chat tailored to their technical and soft skills profile.
+- **Team Leader (TL)** — A mentor or instructor responsible for a cohort of Coders. TLs have access to an analytics dashboard that surfaces at-risk students and tracks cohort-wide progress before academic failure occurs.
+
+## Backend engines
+
+Kairo uses a hybrid architecture built on two independent backend services:
+
+- **Node.js / Express 5 (API Gateway — port 3000):** The System Orchestrator. Manages user authentication (including GitHub and Google OAuth), session handling, business logic, EJS server-side rendering, and all communication between the frontend and the Python AI service.
+- **Python / FastAPI (AI Brain — port 8000):** The AI Microservice. Handles local LLM inference via Groq, embedding generation with `sentence-transformers` (`all-MiniLM-L6-v2`), personalized plan generation, focus card creation, AI trainer chat, and TL report generation.
+
+<Note>
+  Kairo's hybrid architecture separates concerns deliberately: Node.js owns security, sessions, and data orchestration, while Python owns all AI computation. This means the AI service can be scaled, swapped, or upgraded independently without touching the core business logic layer.
+</Note>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Adaptive learning plans" icon="map">
+    Generates custom 4-week study plans based on Moodle performance data and self-assessments, adapting the curriculum to each Coder's current strengths and gaps.
+  </Card>
+  <Card title="Soft skills assessment" icon="brain">
+    Integrates emotional intelligence and communication assessments directly into technical reinforcement tasks, giving a holistic view of each Coder's growth.
+  </Card>
+  <Card title="Focus cards" icon="layers">
+    AI-generated micro-learning cards that surface the most critical concepts a Coder needs to review, derived from their diagnostic results and learning plan.
+  </Card>
+  <Card title="AI trainer chat" icon="message-circle">
+    A conversational AI assistant powered by Groq that answers technical questions, explains concepts, and guides Coders through their personalized learning path.
+  </Card>
+  <Card title="Risk detection" icon="triangle-alert">
+    Proactive analytics that flag at-risk Coders based on performance trends, giving Team Leaders the information they need to intervene before failure.
+  </Card>
+  <Card title="TL analytics dashboard" icon="chart-bar">
+    A dedicated interface for Team Leaders to monitor cohort health, review AI-generated reports, and track individual Coder progress across technical and soft skill dimensions.
+  </Card>
+</CardGroup>

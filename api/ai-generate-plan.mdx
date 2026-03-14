@@ -1,0 +1,214 @@
+---
+title: "Generate Learning Plan"
+description: "Generate a personalized 4-week complementary learning plan for a coder using AI."
+---
+
+<Note>
+  This endpoint requires the coder to have completed the onboarding soft skills diagnostic. If no diagnostic exists, the request returns a `400` error.
+</Note>
+
+## Endpoint
+
+```
+POST /generate-plan
+```
+
+**Tag:** Learning Plans
+
+Generates a personalized 4-week complementary study plan aligned to the coder's current Moodle module. There are two plan types:
+
+- **`interpretive`** — Generated right after onboarding completes. Translates the coder's soft skill profile into a concrete learning path.
+- **`analytical`** — Generated every Monday by the weekly cron job. Analyzes last week's academic performance data to correct weaknesses and build on strengths.
+
+Before generating, the service deactivates any existing active plan for the coder so only one plan is active at a time.
+
+## Request Body
+
+<ParamField body="coder_id" type="integer" required>
+  The coder's user ID from the `users` table.
+</ParamField>
+
+<ParamField body="module_id" type="integer" required>
+  The module ID the coder is currently enrolled in. Must exist in the `modules` table.
+</ParamField>
+
+<ParamField body="plan_type" type="string">
+  Plan generation strategy. Must be `"interpretive"` or `"analytical"`. Defaults to `"interpretive"`.
+</ParamField>
+
+<ParamField body="current_week" type="integer">
+  The coder's current week number within the module. Defaults to `1`.
+</ParamField>
+
+<ParamField body="average_score" type="number">
+  The coder's average academic score from last week (0–100). Only used for `analytical` plans. Defaults to `0.0`.
+</ParamField>
+
+<ParamField body="struggling_topics" type="string[]">
+  List of topic names where the coder struggled last week. Only used for `analytical` plans. Defaults to `[]`.
+</ParamField>
+
+<ParamField body="weeks_completed" type="object[]">
+  Full history of completed weeks from `moodle_progress.weeks_completed`. Only used for `analytical` plans. Defaults to `[]`.
+
+  <Expandable title="Week object properties">
+    <ParamField body="week" type="integer">
+      Week number.
+    </ParamField>
+    <ParamField body="average_score" type="number">
+      Average score for that week.
+    </ParamField>
+    <ParamField body="struggling_topics" type="string[]">
+      Topics the coder struggled with that week.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Request Examples
+
+### Interpretive Plan (post-onboarding)
+
+```bash
+curl -X POST http://localhost:8000/generate-plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 3,
+    "module_id": 1,
+    "plan_type": "interpretive",
+    "current_week": 1
+  }'
+```
+
+### Analytical Plan (Monday cron)
+
+```bash
+curl -X POST http://localhost:8000/generate-plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 3,
+    "module_id": 1,
+    "plan_type": "analytical",
+    "current_week": 3,
+    "average_score": 65.5,
+    "struggling_topics": ["Variables y tipos", "Funciones"],
+    "weeks_completed": [
+      { "week": 1, "average_score": 72.0, "struggling_topics": [] },
+      { "week": 2, "average_score": 65.5, "struggling_topics": ["Funciones"] }
+    ]
+  }'
+```
+
+## Response
+
+```json
+{
+  "success": true,
+  "plan_id": 42,
+  "plan": {
+    "plan_type": "interpretive",
+    "targeted_soft_skill": "autonomy",
+    "learning_style_applied": "Kinestésico",
+    "summary": "Plan diseñado para reforzar Python desde una perspectiva práctica, priorizando ejercicios de código desde el primer día.",
+    "weeks": [
+      {
+        "week_number": 1,
+        "focus": "Variables, tipos y listas en Python",
+        "days": [
+          {
+            "day": 1,
+            "technical_activity": {
+              "title": "Mini-proyecto: calculadora de notas en Python",
+              "description": "Escribe una función que reciba una lista de scores y retorne el promedio, máximo y mínimo.",
+              "duration_minutes": 45,
+              "difficulty": "beginner",
+              "resources": ["https://replit.com", "Python Docs — Built-in Functions"]
+            },
+            "soft_skill_activity": {
+              "title": "Investigación autónoma: sin tutorial",
+              "skill": "autonomy",
+              "description": "Resuelve el ejercicio del día usando solo la documentación oficial de Python, sin videos ni tutoriales.",
+              "duration_minutes": 20,
+              "reflection_prompt": "¿Qué hiciste cuando te bloqueaste? ¿Cómo lo resolviste?"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "plan_type": "interpretive",
+    "coder_id": 3,
+    "module_id": 1,
+    "module_name": "Fundamentos de Python",
+    "current_week": 1,
+    "execution_ms": 3241
+  }
+}
+```
+
+## Response Fields
+
+<ResponseField name="success" type="boolean">
+  Always `true` on a successful response.
+</ResponseField>
+
+<ResponseField name="plan_id" type="integer">
+  The ID of the newly saved plan in the `complementary_plans` table.
+</ResponseField>
+
+<ResponseField name="plan" type="object">
+  The full AI-generated plan object.
+
+  <Expandable title="plan properties">
+    <ResponseField name="plan_type" type="string">
+      Either `"interpretive"` or `"analytical"`.
+    </ResponseField>
+    <ResponseField name="targeted_soft_skill" type="string">
+      The weakest soft skill the AI has chosen to target (e.g., `"autonomy"`, `"time_management"`).
+    </ResponseField>
+    <ResponseField name="learning_style_applied" type="string">
+      The learning style label applied to all activities (e.g., `"Kinestésico"`, `"Visual"`).
+    </ResponseField>
+    <ResponseField name="summary" type="string">
+      Two sentences describing the plan and why it is designed this way for the specific coder.
+    </ResponseField>
+    <ResponseField name="weeks" type="object[]">
+      Array of 4 week objects, each with 5 day objects. Each day contains a `technical_activity` (45 min) and a `soft_skill_activity` (20 min).
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Present only on fallback responses. Value: `"fallback"`. Indicates AI generation failed and a safe placeholder was returned.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Generation metadata.
+
+  <Expandable title="metadata properties">
+    <ResponseField name="plan_type" type="string">Plan type used.</ResponseField>
+    <ResponseField name="coder_id" type="integer">Coder ID.</ResponseField>
+    <ResponseField name="module_id" type="integer">Module ID.</ResponseField>
+    <ResponseField name="module_name" type="string">Module name from the database.</ResponseField>
+    <ResponseField name="current_week" type="integer">Current week number passed in the request.</ResponseField>
+    <ResponseField name="execution_ms" type="integer">Total end-to-end execution time in milliseconds.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Errors
+
+| Status | Condition |
+|--------|-----------|
+| `400` | `plan_type` is not `"interpretive"` or `"analytical"` |
+| `400` | No soft skills diagnostic found for `coder_id` — coder must complete onboarding first |
+| `404` | `module_id` not found — run `seeds/users.sql` to populate modules |
+
+```json
+{ "detail": "No diagnostic found for coder 99. Complete onboarding first." }
+```
+
+## Side Effects
+
+- All previously active plans for the coder are set to `is_active = false` in `complementary_plans`.
+- The new plan is inserted into `complementary_plans` with `is_active = true`.
+- A generation log entry is written to `ai_generation_log` with `agent_type = "plan_generator"`.
+- If the AI returns a fallback plan (status `"fallback"`), the log entry has `success = false`.
